@@ -16,6 +16,13 @@ Preferred communication style: Simple, everyday language.
 - **Rationale**: The commands extension provides a structured way to organize bot functionality into discrete commands, making the code more maintainable and easier to extend
 - **Command Prefix**: Uses "!" as the command prefix for invoking bot commands
 
+## 24/7 Uptime System
+- **Technology**: Flask web server running on port 5000 in a separate thread
+- **Purpose**: Provides a web endpoint that can be pinged by UptimeRobot or similar services to keep the bot alive 24/7
+- **Implementation**: Uses Python threading to run Flask alongside Discord bot without blocking
+- **Endpoint**: GET / returns "✅ BM Creations Bot is alive and running!"
+- **Setup**: Add your Replit web URL to UptimeRobot with HTTP(s) monitoring at 5-minute intervals
+
 ## Intents Configuration
 - **Approach**: Enables default intents plus message content intent
 - **Rationale**: Message content intent is required to read command arguments and process user input. This is necessary for the `!newticket` command to parse customer names and order details
@@ -43,6 +50,7 @@ Preferred communication style: Simple, everyday language.
   - Stores ticket information in active_tickets dictionary
   - Displays a ticket confirmation embed with all details
   - Captures: customer name, order details, ticket channel, creation timestamp
+- **Permissions**: Staff role required
 - **Example**: `!newticket JohnDoe 2x Custom Avatar + Profile Background`
 
 ### !completeorder <order_id>
@@ -51,8 +59,10 @@ Preferred communication style: Simple, everyday language.
   - Deletes the command message instantly
   - Retrieves ticket information from active_tickets
   - Posts a completion embed to ORDER_CHANNEL_ID (order status channel)
+  - Posts the same completion embed to the original ticket channel (so buyer sees it)
   - Removes ticket from active_tickets
-  - Shows confirmation message (deleted after 5 seconds)
+  - Shows confirmation message if not in ticket channel (deleted after 5 seconds)
+- **Permissions**: Staff role required
 - **Example**: `!completeorder ORD-A8K3D9F-7H2Q1X`
 
 ### !viewtickets
@@ -61,7 +71,13 @@ Preferred communication style: Simple, everyday language.
   - Deletes the command message
   - Shows an embed listing all active tickets with their details
   - Displays: Order ID, customer name, order details (truncated if long), creation time, ticket channel
+- **Permissions**: Staff role required
 - **Example**: `!viewtickets`
+
+## Permissions System
+- **Staff Role**: Commands are restricted to users with a role named "Staff" (configurable via STAFF_ROLE_NAME constant)
+- **Protected Commands**: !newticket, !completeorder, !viewtickets
+- **Fallback**: If the Staff role doesn't exist in the server, all users can access commands (for testing purposes)
 
 ## Workflow
 1. Customer makes a purchase → Staff member uses `!newticket` in the ticket/support channel
@@ -75,6 +91,7 @@ Preferred communication style: Simple, everyday language.
 ## Required Python Libraries
 - **discord.py**: Core Discord API wrapper for Python
 - **pytz**: Timezone database and conversion utilities
+- **flask**: Web framework for the 24/7 uptime server
 
 ## Discord Platform Requirements
 - **Bot Token**: Must be configured as `TOKEN` environment variable/secret
