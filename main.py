@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import os
+from datetime import datetime
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -34,7 +35,10 @@ async def order(ctx, *, details="Not specified"):
     embed.add_field(name="👤 Customer", value="Privacy Protected", inline=False)
     embed.add_field(name="📌 Ticket Channel", value="#No Access", inline=False)
     embed.add_field(name="📦 Order Details", value=details, inline=False)
-    embed.add_field(name="🕒 Completed At", value="Auto-generated", inline=False)
+    
+    # Get current timestamp
+    timestamp = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+    embed.add_field(name="🕒 Completed At", value=timestamp, inline=False)
     embed.add_field(name="💚 Status", value="✅ DELIVERED", inline=False)
 
     embed.set_footer(text="BM Creations Support • Trusted Since 2020")
