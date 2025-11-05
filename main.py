@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 from datetime import datetime
+import pytz
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -36,8 +37,9 @@ async def order(ctx, *, details="Not specified"):
     embed.add_field(name="📌 Ticket Channel", value="#No Access", inline=False)
     embed.add_field(name="📦 Order Details", value=details, inline=False)
     
-    # Get current timestamp
-    timestamp = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+    # Get current timestamp in US Eastern Time
+    us_eastern = pytz.timezone('America/New_York')
+    timestamp = datetime.now(us_eastern).strftime("%B %d, %Y at %I:%M %p EST")
     embed.add_field(name="🕒 Completed At", value=timestamp, inline=False)
     embed.add_field(name="💚 Status", value="✅ DELIVERED", inline=False)
 
