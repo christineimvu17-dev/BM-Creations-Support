@@ -5,7 +5,26 @@ from datetime import datetime
 import pytz
 import random
 import string
+from flask import Flask
+from threading import Thread
 
+# --- Flask Web Server (For UptimeRobot / 24/7 Uptime) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "✅ BM Creations Bot is alive and running!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=5000)
+
+def keep_alive():
+    """Start Flask server in a separate thread"""
+    t = Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+
+# --- Discord Bot Setup ---
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -186,5 +205,7 @@ async def viewtickets(ctx):
     
     await ctx.send(embed=embed)
 
-# Run the bot
-bot.run(os.getenv("TOKEN"))
+# --- Start Everything ---
+if __name__ == "__main__":
+    keep_alive()  # Start Flask web server
+    bot.run(os.getenv("TOKEN"))  # Start Discord bot
