@@ -11,11 +11,22 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Replace this with your real channel ID later
+# Configuration
 ORDER_CHANNEL_ID = 1435161427878084618
+STAFF_ROLE_NAME = "Staff"  # Change this to your staff role name
 
 # Store active tickets/orders
-active_tickets = {}  
+active_tickets = {}
+
+def is_staff(ctx):
+    """Check if user has staff role."""
+    if ctx.guild is None:
+        return False
+    staff_role = discord.utils.get(ctx.guild.roles, name=STAFF_ROLE_NAME)
+    if staff_role is None:
+        # If role doesn't exist, allow anyone (for testing)
+        return True
+    return staff_role in ctx.author.roles  
 
 def generate_order_id():
     """Generate a random order ID."""
@@ -33,6 +44,12 @@ async def newticket(ctx, customer_name: str, *, order_details: str):
     # Delete the command message
     await ctx.message.delete()
     
+    # Check if user has staff permissions
+    if not is_staff(ctx):
+        error_msg = await ctx.send("❌ You don't have permission to use this command. Staff only!")
+        await error_msg.delete(delay=5)
+        return
+    
     # Generate unique order ID
     order_id = generate_order_id()
     
@@ -45,6 +62,7 @@ async def newticket(ctx, customer_name: str, *, order_details: str):
         'customer_name': customer_name,
         'order_details': order_details,
         'ticket_channel': ctx.channel.mention,
+        'ticket_channel_id': ctx.channel.id,
         'created_at': created_at,
         'created_timestamp': datetime.now(us_eastern)
     }
@@ -73,6 +91,12 @@ async def completeorder(ctx, order_id: str):
     """Complete a ticket and post to order status channel."""
     # Delete the command message
     await ctx.message.delete()
+    
+    # Check if user has staff permissions
+    if not is_staff(ctx):
+        error_msg = await ctx.send("❌ You don't have permission to use this command. Staff only!")
+        await error_msg.delete(delay=5)
+        return
     
     # Check if order exists
     if order_id not in active_tickets:
@@ -114,9 +138,15 @@ async def completeorder(ctx, order_id: str):
     # Send to order status channel
     await status_channel.send(embed=embed)
     
-    # Confirm in current channel
-    confirm_msg = await ctx.send(f"✅ Order `{order_id}` has been marked as complete and posted to order status!")
-    await confirm_msg.delete(delay=5)
+    # Send to ticket channel (for buyer to see)
+    ticket_channel = bot.get_channel(ticket['ticket_channel_id'])
+    if ticket_channel:
+        await ticket_channel.send(embed=embed)
+    
+    # Confirm in current channel (only if different from ticket channel)
+    if ctx.channel.id != ticket['ticket_channel_id']:
+        confirm_msg = await ctx.send(f"✅ Order `{order_id}` has been marked as complete and posted!")
+        await confirm_msg.delete(delay=5)
     
     # Remove from active tickets
     del active_tickets[order_id]
@@ -126,6 +156,12 @@ async def completeorder(ctx, order_id: str):
 async def viewtickets(ctx):
     """View all active tickets."""
     await ctx.message.delete()
+    
+    # Check if user has staff permissions
+    if not is_staff(ctx):
+        error_msg = await ctx.send("❌ You don't have permission to use this command. Staff only!")
+        await error_msg.delete(delay=5)
+        return
     
     if not active_tickets:
         msg = await ctx.send("📋 No active tickets at the moment.")
