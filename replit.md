@@ -1,108 +1,186 @@
-# Overview
+# BM Creations Discord Bot
 
-This is a Python Discord bot built using the discord.py library. The bot provides a complete order/ticket management system for Discord servers, allowing staff to create customer tickets, track active orders, and post completion messages to a designated order status channel. The system is designed for BM Creations Market to manage customer service and order fulfillment within Discord.
+## Overview
 
-**Last Updated:** November 5, 2025
+This is a comprehensive Python Discord bot built using discord.py with a modular cog architecture. The bot provides a complete business management system including order tracking, ticket support, shopping cart, wishlist, FAQ, moderation, analytics, and more. All data is persisted in a PostgreSQL database.
 
-# User Preferences
+**Last Updated:** December 2, 2025
+
+## User Preferences
 
 Preferred communication style: Simple, everyday language.
 
-# System Architecture
+## Project Structure
 
-## Bot Framework
-- **Technology**: discord.py library with commands extension
-- **Design Pattern**: Command-based bot architecture using the `commands.Bot` class
-- **Rationale**: The commands extension provides a structured way to organize bot functionality into discrete commands, making the code more maintainable and easier to extend
-- **Command Prefix**: Uses "!" as the command prefix for invoking bot commands
+```
+.
+├── main.py                 # Main entry point
+├── src/
+│   ├── config.py           # Bot configuration
+│   ├── bot.py              # Alternative entry point
+│   ├── models/
+│   │   └── database.py     # SQLAlchemy database models
+│   ├── services/
+│   │   └── database.py     # Database service layer
+│   ├── cogs/
+│   │   ├── core.py         # Core bot functionality
+│   │   ├── tickets.py      # Ticket management
+│   │   ├── orders.py       # Order tracking
+│   │   ├── commerce.py     # Cart & wishlist
+│   │   ├── faq.py          # FAQ system
+│   │   ├── moderation.py   # Moderation tools
+│   │   ├── announcements.py # Broadcast system
+│   │   ├── feedback.py     # Review collection
+│   │   ├── reminders.py    # Scheduled reminders
+│   │   ├── analytics.py    # Stats dashboard
+│   │   ├── recommendations.py # Personalized recommendations
+│   │   └── sync.py         # Server/product sync
+│   └── utils/
+│       ├── helpers.py      # Utility functions
+│       └── translations.py # Multilingual support
+```
 
-## 24/7 Uptime System
-- **Technology**: Flask web server running on port 5000 in a separate thread
-- **Purpose**: Provides a web endpoint that can be pinged by UptimeRobot or similar services to keep the bot alive 24/7
-- **Implementation**: Uses Python threading to run Flask alongside Discord bot without blocking
-- **Endpoint**: GET / returns "✅ BM Creations Bot is alive and running!"
-- **Setup**: Add your Replit web URL to UptimeRobot with HTTP(s) monitoring at 5-minute intervals
+## Features
 
-## Intents Configuration
-- **Approach**: Enables default intents plus message content intent
-- **Rationale**: Message content intent is required to read command arguments and process user input. This is necessary for the `!newticket` command to parse customer names and order details
-- **Trade-off**: Requires privileged intent approval in Discord Developer Portal for bots in 100+ servers
+### 1. Persistent User Memory
+- All user data stored in PostgreSQL
+- Tracks purchase history, preferences, interactions
+- Survives bot restarts
 
-## Order/Ticket Management System
-- **Storage**: In-memory dictionary (`active_tickets`) keyed by order ID
-- **ID Generation**: Custom format `ORD-{7chars}-{6chars}` using random alphanumeric characters
-- **Rationale**: In-memory storage is suitable for a starting template and prototyping. For production use, this would need to be replaced with persistent storage
-- **Limitation**: All ticket data is lost when the bot restarts
+### 2. Ticket/Order System
+- `!newticket <subject>` - Create support ticket
+- `!closeticket` - Close current ticket
+- `!order <details>` - Create new order
+- `!trackorder <id>` - Track order status
+- `!completeorder <id>` - Mark order complete (Staff)
 
-## Timestamp Handling
-- **Timezone**: US Eastern Time (America/New_York)
-- **Library**: pytz for timezone-aware datetime operations
-- **Format**: Human-readable format (e.g., "January 15, 2024 at 03:30 PM EST")
-- **Rationale**: Provides consistent timezone handling for geographically distributed teams/customers
+### 3. Shopping Cart & Wishlist
+- `!cart` - View cart
+- `!addtocart <product>` - Add to cart
+- `!wishlist` - View wishlist
+- `!checkout` - Place order
 
-## Available Commands
+### 4. Smart Answer System (FAQ)
+- `!faq` - View FAQ list
+- `!ask <question>` - Ask a question
+- Auto-responds to questions in channels
 
-### !newticket <customer_name> <order_details>
-- **Purpose**: Creates a new customer order ticket
-- **Behavior**: 
-  - Deletes the command message instantly
-  - Generates a unique random Order ID (format: ORD-XXXXXXX-XXXXXX)
-  - Stores ticket information in active_tickets dictionary
-  - Displays a ticket confirmation embed with all details
-  - Captures: customer name, order details, ticket channel, creation timestamp
-- **Permissions**: Staff role required
-- **Example**: `!newticket JohnDoe 2x Custom Avatar + Profile Background`
+### 5. Welcome/Onboarding
+- Automatic welcome messages
+- `!setwelcome #channel` - Set welcome channel
+- `!setwelcomemsg <message>` - Set welcome message
 
-### !completeorder <order_id>
-- **Purpose**: Marks a ticket as complete and posts to order status channel
-- **Behavior**:
-  - Deletes the command message instantly
-  - Retrieves ticket information from active_tickets
-  - Posts a completion embed to ORDER_CHANNEL_ID (order status channel)
-  - Posts the same completion embed to the original ticket channel (so buyer sees it)
-  - Removes ticket from active_tickets
-  - Shows confirmation message if not in ticket channel (deleted after 5 seconds)
-- **Permissions**: Staff role required
-- **Example**: `!completeorder ORD-A8K3D9F-7H2Q1X`
+### 6. Moderation
+- `!warn <user> <reason>` - Issue warning
+- `!warnings <user>` - View warnings
+- `!mute/unmute` - Mute users
+- `!kick/ban` - Remove users
 
-### !viewtickets
-- **Purpose**: View all currently active tickets
-- **Behavior**:
-  - Deletes the command message
-  - Shows an embed listing all active tickets with their details
-  - Displays: Order ID, customer name, order details (truncated if long), creation time, ticket channel
-- **Permissions**: Staff role required
-- **Example**: `!viewtickets`
+### 7. Announcements
+- `!announce <message>` - Send announcement
+- `!broadcast <message>` - Send to all channels
+- `!scheduleannounce <delay> #channel <message>` - Schedule
 
-## Permissions System
-- **Staff Role**: Commands are restricted to users with a role named "Staff" (configurable via STAFF_ROLE_NAME constant)
-- **Protected Commands**: !newticket, !completeorder, !viewtickets
-- **Fallback**: If the Staff role doesn't exist in the server, all users can access commands (for testing purposes)
+### 8. Feedback & Reviews
+- `!feedback <message>` - Submit feedback
+- `!review <1-5> <comment>` - Leave review
+- `!suggest <idea>` - Submit suggestion
 
-## Workflow
-1. Customer makes a purchase → Staff member uses `!newticket` in the ticket/support channel
-2. Bot creates ticket record and shows confirmation embed
-3. Staff can use `!viewtickets` to see all active orders
-4. When order is ready → Staff uses `!completeorder` with the Order ID
-5. Bot posts completion message to the order status channel and removes ticket from active list
+### 9. Reminders
+- `!remind <time> <message>` - Set reminder (e.g., 1h, 30m, 1d)
+- `!myreminders` - View pending reminders
+- `!daily <HH:MM> <message>` - Daily reminder
 
-# External Dependencies
+### 10. Multilingual Support
+Supports: English, Spanish, French, German, Portuguese, Arabic, Chinese, Japanese, Korean, Russian
+- `!setlanguage <lang>` - Change language
 
-## Required Python Libraries
-- **discord.py**: Core Discord API wrapper for Python
-- **pytz**: Timezone database and conversion utilities
-- **flask**: Web framework for the 24/7 uptime server
+### 11. Analytics Dashboard
+- `!stats` - Server statistics
+- `!dashboard` - Full overview
+- `!topbuyers` - Top customers
+- `!orderstats` - Order analytics
 
-## Discord Platform Requirements
-- **Bot Token**: Must be configured as `TOKEN` environment variable/secret
-- **Bot Permissions**: Requires permissions to read messages, send messages, and delete messages
-- **Privileged Intents**: Message Content intent must be enabled in Discord Developer Portal
+### 12. Private Recommendations
+- `!recommend` - Get personalized recommendations (ticket channels only)
+- `!similar <product>` - Find similar products
+- `!bestsellers` - Top selling items
 
-## Configuration Requirements
-- **ORDER_CHANNEL_ID**: Channel ID (1435161427878084618) for the `#『☎️』order-status` channel where completed orders are posted
-- **Bot Permissions Required**: Manage Messages (to delete command messages), Send Messages, Embed Links
+### 13. External API Integration
+- `!weather <city>` - Get current weather
+- `!crypto <symbol>` - Get cryptocurrency prices
+- `!quote` - Random inspirational quote
+- `!joke` - Random joke
+- `!catfact` - Random cat fact
+- `!github <username>` - GitHub user info
+- `!define <word>` - Dictionary definition
+- `!translate <lang> <text>` - Translate text
+- `!apistatus` - Check API status (Admin)
 
-## Known Limitations
-- **In-Memory Storage**: Active tickets are stored in RAM only. If the bot restarts, all active ticket data is lost. For production use, this should be replaced with persistent storage (database or JSON file)
-- **No Message Deletion Fallback**: If the bot lacks permission to delete messages, commands will fail. Should add try/except handling for permission errors
-- **No Automated Ticket Channels**: System tracks tickets but doesn't create dedicated Discord channels for each ticket (can be added if needed)
+### 14. Server Sync
+- `!fetchserver` - Sync server data & auto-configure
+- `!syncproducts #channel` - Sync products from channel
+- `!syncallchannels` - Sync from all channels
+
+## Database Schema
+
+### Core Tables
+- **users** - User profiles, preferences, language
+- **products** - Product catalog
+- **tickets** - Support tickets
+- **orders** - Customer orders
+- **order_items** - Order line items
+- **order_events** - Order status history
+
+### Commerce Tables
+- **cart_items** - Shopping cart
+- **wishlist_items** - User wishlists
+- **recommendations** - Personalized recommendations
+
+### Support Tables
+- **faqs** - FAQ entries
+- **announcements** - Scheduled announcements
+- **warnings** - User warnings
+- **feedback** - Reviews and feedback
+- **reminders** - Scheduled reminders
+- **user_interactions** - Activity log
+- **analytics** - Daily metrics
+- **guild_settings** - Server configuration
+
+## Setup Commands
+
+After adding the bot to your server:
+1. `!fetchserver` - Auto-configure channels and roles
+2. `!syncproducts #products-channel` - Import products
+3. `!setwelcome #welcome` - Set welcome channel
+4. `!setorders #order-status` - Set order channel
+5. `!addfaq Question | Answer` - Add FAQ entries
+
+## Configuration
+
+Environment variables required:
+- `TOKEN` - Discord bot token
+- `DATABASE_URL` - PostgreSQL connection string (auto-configured)
+
+## Dependencies
+
+- discord.py - Discord API
+- SQLAlchemy - Database ORM
+- asyncpg - PostgreSQL driver
+- Flask - Keep-alive server
+- APScheduler - Task scheduling
+- pytz - Timezone handling
+- aiohttp - Async HTTP (for external API calls)
+- python-dateutil - Date parsing
+
+## 24/7 Uptime
+
+Flask server runs on port 5000 for monitoring:
+- Endpoint: GET / returns status message
+- Configure UptimeRobot to ping every 5 minutes
+
+## Privacy Features
+
+- Personalized recommendations only in ticket channels
+- User data scoped per server
+- Secure token management

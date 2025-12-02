@@ -6,7 +6,6 @@ from flask import Flask
 from threading import Thread
 
 from src.config import Config
-from src.services.database import db_service
 
 app = Flask('')
 
@@ -42,7 +41,6 @@ COGS = [
     "src.cogs.analytics",
     "src.cogs.recommendations",
     "src.cogs.sync",
-    "src.cogs.external_api",
 ]
 
 async def load_cogs():
