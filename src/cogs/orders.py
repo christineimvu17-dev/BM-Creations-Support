@@ -9,9 +9,148 @@ from src.utils.helpers import create_embed, is_staff, get_eastern_time, format_t
 from src.utils.translations import get_text
 from src.config import Config
 
+class ManualOrderCompletionView(discord.ui.View):
+    def __init__(self, order_id: str, bot: commands.Bot, timeout: float = None):
+        super().__init__(timeout=timeout)
+        self.order_id = order_id
+        self.bot = bot
+    
+    @discord.ui.button(label="Mark Completed", style=discord.ButtonStyle.success, emoji="✅", custom_id="manual_complete_order")
+    async def complete_order(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        
+        order = await db_service.update_order_status(
+            self.order_id,
+            OrderStatus.DELIVERED,
+            staff_id=interaction.user.id
+        )
+        
+        if not order:
+            await interaction.followup.send("Order not found!", ephemeral=True)
+            return
+        
+        for item in self.children:
+            item.disabled = True
+        
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
+        
+        completed_embed = create_embed(
+            title="✅ Order Completed!",
+            description="Thank you for shopping with **BM Creations Market!**\n\nYour order has been successfully delivered.",
+            color=Config.SUCCESS_COLOR
+        )
+        
+        completed_embed.add_field(name="🆔 Order ID", value=f"**{self.order_id}**", inline=True)
+        completed_embed.add_field(name="📦 Status", value="✅ **COMPLETED**", inline=True)
+        completed_embed.add_field(name="⏰ Completed At", value=format_timestamp(get_eastern_time()), inline=True)
+        completed_embed.add_field(
+            name="🌐 Connect With Us",
+            value="**Website:** [Visit Us](https://imvublackmarket.xyz/)\n**Instagram:** [Follow Us](https://www.instagram.com/imvublackmarket_official?igsh=MXhsaXo4dzByeTg4ZA==)",
+            inline=False
+        )
+        completed_embed.set_footer(text="BM Creations Market | Trusted Since 2020")
+        
+        await interaction.followup.send(embed=completed_embed)
+        
+        settings = await db_service.get_or_create_guild_settings(interaction.guild.id)
+        if settings.order_channel_id:
+            order_channel = self.bot.get_channel(settings.order_channel_id)
+            if order_channel:
+                status_embed = create_embed(
+                    title="✅ Order Completed",
+                    description=f"Order **{self.order_id}** has been marked as completed!",
+                    color=Config.SUCCESS_COLOR
+                )
+                status_embed.add_field(name="Completed By", value=interaction.user.mention, inline=True)
+                status_embed.add_field(name="Time", value=format_timestamp(get_eastern_time()), inline=True)
+                await order_channel.send(embed=status_embed)
+        
+        try:
+            user = self.bot.get_user(order.user.discord_id)
+            if user:
+                dm_embed = create_embed(
+                    title="🎉 Your Order is Complete!",
+                    description=f"Your order **{self.order_id}** has been delivered!\n\nThank you for choosing BM Creations Market!",
+                    color=Config.SUCCESS_COLOR
+                )
+                await user.send(embed=dm_embed)
+        except:
+            pass
+        
+        self.stop()
+
 class OrdersCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+    
+    @app_commands.command(name="newwork", description="Manually create a new order with BM ID (Owner only)")
+    @app_commands.describe(
+        customer="The customer to create the order for",
+        product="Product name",
+        notes="Optional notes about the order"
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def new_work(self, interaction: discord.Interaction, customer: discord.Member, product: str, notes: str = None):
+        await interaction.response.defer()
+        
+        order_id = await db_service.generate_unique_bm_order_id()
+        
+        user = await db_service.get_or_create_user(
+            discord_id=customer.id,
+            guild_id=interaction.guild.id,
+            username=str(customer),
+            display_name=customer.display_name
+        )
+        
+        order = await db_service.create_order(
+            guild_id=interaction.guild.id,
+            user_id=user.id,
+            order_id=order_id,
+            channel_id=interaction.channel.id,
+            items=[{"name": product, "quantity": 1, "price": 0.0}],
+            notes=notes or f"Product: {product}"
+        )
+        
+        order_embed = create_embed(
+            title="🎫 New Order Created",
+            description=f"A new order has been created for {customer.mention}",
+            color=Config.EMBED_COLOR
+        )
+        
+        order_embed.add_field(name="🆔 Order ID", value=f"**{order_id}**", inline=True)
+        order_embed.add_field(name="👤 Customer", value=customer.mention, inline=True)
+        order_embed.add_field(name="📍 Channel", value=f"<#{interaction.channel.id}>", inline=True)
+        order_embed.add_field(name="🛍️ Product", value=product, inline=True)
+        order_embed.add_field(name="🕐 Created At", value=format_timestamp(get_eastern_time()), inline=True)
+        order_embed.add_field(name="📦 Status", value="🟡 **IN PROGRESS**", inline=True)
+        
+        if notes:
+            order_embed.add_field(name="📝 Notes", value=notes, inline=False)
+        
+        order_embed.set_footer(text="Click 'Mark Completed' when order is delivered")
+        
+        view = ManualOrderCompletionView(order_id, self.bot)
+        await interaction.followup.send(embed=order_embed, view=view)
+        
+        settings = await db_service.get_or_create_guild_settings(interaction.guild.id)
+        if settings.order_channel_id:
+            order_channel = self.bot.get_channel(settings.order_channel_id)
+            if order_channel:
+                status_embed = create_embed(
+                    title="🎫 New Order Received",
+                    description=f"Order **{order_id}** has been created!",
+                    color=Config.EMBED_COLOR
+                )
+                status_embed.add_field(name="🆔 Order ID", value=f"**{order_id}**", inline=True)
+                status_embed.add_field(name="👤 Customer", value=str(customer), inline=True)
+                status_embed.add_field(name="🛍️ Product", value=product, inline=True)
+                status_embed.add_field(name="🕐 Time", value=format_timestamp(get_eastern_time()), inline=True)
+                status_embed.add_field(name="📦 Status", value="🟡 **IN PROGRESS**", inline=True)
+                status_embed.set_footer(text="Manual order created by owner")
+                await order_channel.send(embed=status_embed)
     
     @app_commands.command(name="order", description="Create a new order")
     @app_commands.describe(details="Order details/description")
