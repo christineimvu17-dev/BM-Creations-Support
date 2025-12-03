@@ -66,6 +66,15 @@ async def on_command_error(ctx, error):
         await ctx.send(f"Invalid argument provided.", delete_after=5)
     else:
         print(f"Error in command {ctx.command}: {error}")
+        import traceback
+        traceback.print_exception(type(error), error, error.__traceback__)
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+    print(f"Message received: {message.content[:50]}...")
+    await bot.process_commands(message)
 
 async def main():
     async with bot:
