@@ -34,7 +34,10 @@ class TicketsCog(commands.Cog):
     
     @commands.command(name="newticket")
     async def new_ticket(self, ctx: commands.Context, *, subject: str = "General Support"):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         user = await db_service.get_or_create_user(
             ctx.author.id, ctx.guild.id, str(ctx.author), ctx.author.display_name
@@ -120,7 +123,10 @@ class TicketsCog(commands.Cog):
     
     @commands.command(name="viewtickets")
     async def view_tickets(self, ctx: commands.Context):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         if not is_staff(ctx.author):
             await ctx.send("You don't have permission to use this command.", delete_after=5)

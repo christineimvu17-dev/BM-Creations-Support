@@ -14,7 +14,10 @@ class ModerationCog(commands.Cog):
     @commands.command(name="warn")
     @commands.has_permissions(kick_members=True)
     async def warn_user(self, ctx: commands.Context, member: discord.Member, *, reason: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         if member.bot:
             await ctx.send("Cannot warn bots.", delete_after=5)
@@ -151,7 +154,10 @@ class ModerationCog(commands.Cog):
     @commands.command(name="mute")
     @commands.has_permissions(manage_roles=True)
     async def mute_user(self, ctx: commands.Context, member: discord.Member, duration: str = "1h", *, reason: str = "No reason provided"):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         seconds = parse_duration(duration)
         if not seconds:
@@ -215,7 +221,10 @@ class ModerationCog(commands.Cog):
     @commands.command(name="kick")
     @commands.has_permissions(kick_members=True)
     async def kick_user(self, ctx: commands.Context, member: discord.Member, *, reason: str = "No reason provided"):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         if member.top_role >= ctx.author.top_role:
             await ctx.send("Cannot kick someone with equal or higher role.", delete_after=5)
@@ -247,7 +256,10 @@ class ModerationCog(commands.Cog):
     @commands.command(name="ban")
     @commands.has_permissions(ban_members=True)
     async def ban_user(self, ctx: commands.Context, member: discord.Member, *, reason: str = "No reason provided"):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         if member.top_role >= ctx.author.top_role:
             await ctx.send("Cannot ban someone with equal or higher role.", delete_after=5)

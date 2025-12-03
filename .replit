@@ -1,5 +1,5 @@
 entrypoint = "main.py"
-modules = ["python-3.10", "nix", "postgresql-16"]
+modules = ["python-3.10", "nix"]
 
 hidden = [".pythonlibs"]
 

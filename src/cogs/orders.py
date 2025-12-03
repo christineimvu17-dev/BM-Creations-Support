@@ -14,7 +14,10 @@ class OrdersCog(commands.Cog):
     
     @commands.command(name="order")
     async def create_order(self, ctx: commands.Context, *, details: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         user = await db_service.get_or_create_user(
             ctx.author.id, ctx.guild.id, str(ctx.author), ctx.author.display_name
@@ -139,7 +142,10 @@ class OrdersCog(commands.Cog):
     
     @commands.command(name="updateorder")
     async def update_order(self, ctx: commands.Context, order_id: str, status: str, *, notes: str = None):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         if not is_staff(ctx.author):
             await ctx.send("You don't have permission to use this command.", delete_after=5)
@@ -199,7 +205,10 @@ class OrdersCog(commands.Cog):
     
     @commands.command(name="completeorder")
     async def complete_order(self, ctx: commands.Context, order_id: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         if not is_staff(ctx.author):
             await ctx.send("You don't have permission to use this command.", delete_after=5)
@@ -248,7 +257,10 @@ class OrdersCog(commands.Cog):
     
     @commands.command(name="settracking")
     async def set_tracking(self, ctx: commands.Context, order_id: str, tracking_number: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         if not is_staff(ctx.author):
             await ctx.send("You don't have permission to use this command.", delete_after=5)

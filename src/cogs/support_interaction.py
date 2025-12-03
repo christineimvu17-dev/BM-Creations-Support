@@ -434,7 +434,10 @@ class SupportInteractionCog(commands.Cog):
     @commands.command(name="setpaypal")
     @commands.has_permissions(administrator=True)
     async def set_paypal(self, ctx: commands.Context, *, link: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         await db_service.update_guild_settings(
             ctx.guild.id,

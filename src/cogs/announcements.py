@@ -13,7 +13,10 @@ class AnnouncementsCog(commands.Cog):
     @commands.command(name="announce")
     @commands.has_permissions(administrator=True)
     async def announce(self, ctx: commands.Context, *, message: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         embed = create_embed(
             title="Announcement",
@@ -38,7 +41,10 @@ class AnnouncementsCog(commands.Cog):
     @commands.command(name="broadcast")
     @commands.has_permissions(administrator=True)
     async def broadcast(self, ctx: commands.Context, *, message: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         embed = create_embed(
             title="Broadcast",
@@ -63,7 +69,10 @@ class AnnouncementsCog(commands.Cog):
     @commands.command(name="dmall")
     @commands.has_permissions(administrator=True)
     async def dm_all(self, ctx: commands.Context, *, message: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         embed = create_embed(
             title=f"Message from {ctx.guild.name}",
@@ -91,7 +100,10 @@ class AnnouncementsCog(commands.Cog):
     @commands.command(name="scheduleannounce")
     @commands.has_permissions(administrator=True)
     async def schedule_announce(self, ctx: commands.Context, delay: str, channel: discord.TextChannel, *, message: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         seconds = parse_duration(delay)
         if not seconds:
@@ -121,7 +133,10 @@ class AnnouncementsCog(commands.Cog):
     
     @commands.command(name="poll")
     async def create_poll(self, ctx: commands.Context, question: str, *options):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         if len(options) < 2:
             await ctx.send("Please provide at least 2 options for the poll.", delete_after=5)
@@ -153,7 +168,10 @@ class AnnouncementsCog(commands.Cog):
     @commands.command(name="giveaway")
     @commands.has_permissions(administrator=True)
     async def create_giveaway(self, ctx: commands.Context, duration: str, winners: int, *, prize: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         seconds = parse_duration(duration)
         if not seconds:
@@ -185,7 +203,10 @@ class AnnouncementsCog(commands.Cog):
     @commands.command(name="embed")
     @commands.has_permissions(manage_messages=True)
     async def create_embed(self, ctx: commands.Context, title: str, *, content: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         parts = content.split("|")
         description = parts[0].strip()
@@ -212,13 +233,19 @@ class AnnouncementsCog(commands.Cog):
     @commands.command(name="say")
     @commands.has_permissions(manage_messages=True)
     async def say(self, ctx: commands.Context, *, message: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         await ctx.send(message)
     
     @commands.command(name="editmessage")
     @commands.has_permissions(manage_messages=True)
     async def edit_message(self, ctx: commands.Context, message_id: int, *, new_content: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         try:
             message = await ctx.channel.fetch_message(message_id)

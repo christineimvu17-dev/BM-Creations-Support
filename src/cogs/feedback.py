@@ -12,7 +12,10 @@ class FeedbackCog(commands.Cog):
     
     @commands.command(name="feedback")
     async def submit_feedback(self, ctx: commands.Context, *, message: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         user = await db_service.get_or_create_user(ctx.author.id, ctx.guild.id, str(ctx.author), ctx.author.display_name)
         lang = user.language
@@ -47,7 +50,10 @@ class FeedbackCog(commands.Cog):
     
     @commands.command(name="review")
     async def submit_review(self, ctx: commands.Context, rating: int, *, comment: str = None):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         if not 1 <= rating <= 5:
             await ctx.send("Rating must be between 1 and 5 stars.", delete_after=5)
@@ -98,7 +104,10 @@ class FeedbackCog(commands.Cog):
     
     @commands.command(name="suggest")
     async def submit_suggestion(self, ctx: commands.Context, *, suggestion: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         user = await db_service.get_or_create_user(ctx.author.id, ctx.guild.id, str(ctx.author), ctx.author.display_name)
         
@@ -123,7 +132,10 @@ class FeedbackCog(commands.Cog):
     
     @commands.command(name="report")
     async def submit_report(self, ctx: commands.Context, *, issue: str):
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         
         user = await db_service.get_or_create_user(ctx.author.id, ctx.guild.id, str(ctx.author), ctx.author.display_name)
         
