@@ -43,6 +43,7 @@ COGS = [
     "src.cogs.recommendations",
     "src.cogs.sync",
     "src.cogs.external_api",
+    "src.cogs.support_interaction",
 ]
 
 async def load_cogs():

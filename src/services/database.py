@@ -210,6 +210,26 @@ class DatabaseService:
                 await session.commit()
             return ticket
     
+    async def update_ticket_extra_data(self, ticket_id: str, extra_data: Dict) -> Ticket:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(Ticket).where(Ticket.ticket_id == ticket_id)
+            )
+            ticket = result.scalar_one_or_none()
+            if ticket:
+                ticket.extra_data = extra_data
+                await session.commit()
+            return ticket
+    
+    async def get_all_products(self, guild_id: int) -> List[Product]:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(Product).where(
+                    and_(Product.guild_id == guild_id, Product.is_available == True)
+                )
+            )
+            return result.scalars().all()
+    
     async def add_ticket_message(self, ticket_id: int, author_id: int, content: str, 
                                  message_id: int = None, is_staff: bool = False) -> TicketMessage:
         async with self.session_factory() as session:

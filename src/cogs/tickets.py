@@ -78,15 +78,13 @@ class TicketsCog(commands.Cog):
         embed.add_field(name="Subject", value=subject, inline=True)
         embed.add_field(name="Status", value=f"{get_status_emoji('open')} Open", inline=True)
         embed.add_field(name="Created At", value=format_timestamp(get_eastern_time()), inline=False)
-        embed.add_field(
-            name="Instructions",
-            value="Please describe your issue and a staff member will assist you shortly.\nUse `!closeticket` to close this ticket when resolved.",
-            inline=False
-        )
-        
         embed.set_footer(text=f"BM Creations Support | Ticket: {ticket.ticket_id}")
         
         await channel.send(ctx.author.mention, embed=embed)
+        
+        support_cog = self.bot.get_cog("SupportInteractionCog")
+        if support_cog:
+            await support_cog.send_ticket_welcome(channel, ctx.author)
         
         confirm = await ctx.send(f"Ticket created! Please check {channel.mention}")
         await confirm.delete(delay=5)
