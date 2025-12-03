@@ -117,7 +117,16 @@ Supports: English, Spanish, French, German, Portuguese, Arabic, Chinese, Japanes
 - `/resumebot` - Resume bot responses in ticket (after staff is done)
 - `/supportstatus` - View support system configuration
 
-### 13. Interactive Purchase Flow
+### 13. Data Sync Commands (Admin)
+- `/syncall` - Sync all products from all channels (only @sizuka42's messages)
+- `/syncchannel #channel` - Sync products from specific channel
+- `/fetchserver` - Auto-configure server channels and roles
+- `/listproducts` - View all synced products
+- `/clearproducts` - Clear all products from database
+- `/addproduct` - Manually add a product
+- `/serverstats` - View detailed server and product statistics
+
+### 14. Interactive Purchase Flow
 1. User creates thread or clicks "Buy Product" button
 2. User selects category (Triggers/Rooms/Poses/Other)
 3. User types product name → Bot shows product details, image, price
