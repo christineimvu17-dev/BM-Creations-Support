@@ -253,6 +253,38 @@ class TicketWelcomeView(ui.View):
             extra["flow"] = "queries"
             extra["awaiting_query"] = True
             await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+    
+    @ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="close_ticket", row=1)
+    async def close_ticket(self, interaction: discord.Interaction, button: ui.Button):
+        ticket = await db_service.get_ticket(channel_id=self.channel_id)
+        
+        if not ticket:
+            await interaction.response.send_message("This is not a ticket channel.", ephemeral=True)
+            return
+        
+        await interaction.response.defer()
+        
+        await db_service.update_ticket_status(ticket.ticket_id, TicketStatus.CLOSED)
+        
+        embed = create_embed(
+            title="🔒 Ticket Closed",
+            description=f"This ticket has been closed by {interaction.user.mention}\n\n**Thank you for using BM Creations Market!**",
+            color=Config.WARNING_COLOR
+        )
+        embed.add_field(name="Ticket ID", value=ticket.ticket_id, inline=True)
+        embed.add_field(name="Closed At", value=format_timestamp(get_eastern_time()), inline=True)
+        
+        await interaction.followup.send(embed=embed)
+        
+        await interaction.channel.send("This channel will be deleted in 10 seconds...")
+        
+        import asyncio
+        await asyncio.sleep(10)
+        
+        try:
+            await interaction.channel.delete(reason="Ticket closed by user")
+        except:
+            pass
 
 class PaymentConfirmView(ui.View):
     def __init__(self, user_id: int, product_name: str, timeout: float = 600):
