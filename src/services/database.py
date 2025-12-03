@@ -154,7 +154,7 @@ class DatabaseService:
             return result.scalars().all()
     
     async def create_ticket(self, guild_id: int, user_id: int, channel_id: int, 
-                           subject: str = None, category: str = None) -> Ticket:
+                           subject: str = None, category: str = None, extra_data: Dict = None) -> Ticket:
         async with self.session_factory() as session:
             ticket = Ticket(
                 ticket_id=self.generate_id("TKT"),
@@ -162,7 +162,8 @@ class DatabaseService:
                 user_id=user_id,
                 channel_id=channel_id,
                 subject=subject,
-                category=category
+                category=category,
+                extra_data=extra_data or {}
             )
             session.add(ticket)
             await session.commit()

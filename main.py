@@ -58,6 +58,8 @@ async def load_cogs():
 @bot.event
 async def on_ready():
     print(f"{bot.user.name} is now online and ready!")
+    print(f"Bot ID: {bot.user.id}")
+    print(f"Connected to {len(bot.guilds)} guilds")
     
     try:
         await db_service.initialize()
@@ -65,11 +67,31 @@ async def on_ready():
     except Exception as e:
         print(f"Database initialization error: {e}")
     
+    all_commands = bot.tree.get_commands()
+    print(f"\nCommands in tree before sync: {len(all_commands)}")
+    for cmd in all_commands[:10]:
+        print(f"  - /{cmd.name}: {cmd.description}")
+    if len(all_commands) > 10:
+        print(f"  ... and {len(all_commands) - 10} more")
+    
+    for guild in bot.guilds:
+        try:
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            print(f"Synced {len(synced)} slash commands to guild: {guild.name}")
+        except Exception as e:
+            print(f"Failed to sync to guild {guild.name}: {e}")
+    
     try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} slash commands globally!")
+        global_synced = await bot.tree.sync()
+        print(f"Also synced {len(global_synced)} slash commands globally")
     except Exception as e:
-        print(f"Failed to sync commands: {e}")
+        print(f"Failed to sync globally: {e}")
+    
+    print("\n=== BOT INVITE LINK ===")
+    print(f"If slash commands don't work, re-invite the bot with this link:")
+    print(f"https://discord.com/api/oauth2/authorize?client_id={bot.user.id}&permissions=8&scope=bot%20applications.commands")
+    print("========================\n")
 
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
