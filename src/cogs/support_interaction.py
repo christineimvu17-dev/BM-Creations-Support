@@ -6,12 +6,13 @@ import asyncio
 from datetime import datetime
 
 from src.services.database import db_service
-from src.models.database import TicketStatus
-from src.utils.helpers import create_embed, is_staff, format_timestamp, get_eastern_time
+from src.models.database import TicketStatus, OrderStatus
+from src.utils.helpers import create_embed, is_staff, format_timestamp, get_eastern_time, get_status_emoji
 from src.config import Config
 
 suppressed_channels: Set[int] = set()
 processed_threads: Set[int] = set()
+OWNER_USERNAMES = ["sizuka42"]
 
 IGNORED_CATEGORIES = ["chat zone", "more fun", "chatzone", "morefun"]
 PURCHASE_KEYWORDS = [
@@ -19,6 +20,96 @@ PURCHASE_KEYWORDS = [
     "how much", "price", "cost", "order", "get this", "interested",
     "can i get", "looking for", "need", "want this", "trigger", "room", "pose"
 ]
+
+def is_owner_user(user: discord.User) -> bool:
+    username_lower = user.name.lower()
+    for owner_name in OWNER_USERNAMES:
+        if username_lower == owner_name.lower():
+            return True
+    return False
+
+class OrderCompletionView(ui.View):
+    def __init__(self, order_id: str, bot: commands.Bot, timeout: float = None):
+        super().__init__(timeout=timeout)
+        self.order_id = order_id
+        self.bot = bot
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not is_owner_user(interaction.user):
+            if not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message(
+                    "Only the owner can complete orders!", 
+                    ephemeral=True
+                )
+                return False
+        return True
+    
+    @ui.button(label="Mark Completed", style=discord.ButtonStyle.success, emoji="✅", custom_id="complete_order")
+    async def complete_order(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer()
+        
+        order = await db_service.update_order_status(
+            self.order_id,
+            OrderStatus.DELIVERED,
+            staff_id=interaction.user.id
+        )
+        
+        if not order:
+            await interaction.followup.send("Order not found!", ephemeral=True)
+            return
+        
+        for item in self.children:
+            item.disabled = True
+        
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
+        
+        completed_embed = create_embed(
+            title="✅ Order Completed!",
+            description="Thank you for shopping with **BM Creations Market!**\n\nYour order has been successfully delivered.",
+            color=Config.SUCCESS_COLOR
+        )
+        
+        completed_embed.add_field(name="🆔 Order ID", value=f"**{self.order_id}**", inline=True)
+        completed_embed.add_field(name="📦 Status", value="✅ **COMPLETED**", inline=True)
+        completed_embed.add_field(name="⏰ Completed At", value=format_timestamp(get_eastern_time()), inline=True)
+        completed_embed.add_field(
+            name="🌐 Connect With Us",
+            value="**Discord:** [Join Server](https://discord.gg/NR4Z9zeBW2)\n**Instagram:** [Follow Us](https://www.instagram.com/imvu_trustedshop)",
+            inline=False
+        )
+        completed_embed.set_footer(text="BM Creations Market | Trusted Since 2020")
+        
+        await interaction.followup.send(embed=completed_embed)
+        
+        settings = await db_service.get_or_create_guild_settings(interaction.guild.id)
+        if settings.order_channel_id:
+            order_channel = self.bot.get_channel(settings.order_channel_id)
+            if order_channel:
+                status_embed = create_embed(
+                    title="✅ Order Completed",
+                    description=f"Order **{self.order_id}** has been marked as completed!",
+                    color=Config.SUCCESS_COLOR
+                )
+                status_embed.add_field(name="Completed By", value=interaction.user.mention, inline=True)
+                status_embed.add_field(name="Time", value=format_timestamp(get_eastern_time()), inline=True)
+                await order_channel.send(embed=status_embed)
+        
+        try:
+            user = self.bot.get_user(order.user.discord_id)
+            if user:
+                dm_embed = create_embed(
+                    title="🎉 Your Order is Complete!",
+                    description=f"Your order **{self.order_id}** has been delivered!\n\nThank you for choosing BM Creations Market!",
+                    color=Config.SUCCESS_COLOR
+                )
+                await user.send(embed=dm_embed)
+        except:
+            pass
+        
+        self.stop()
 
 class ProductCategorySelect(ui.View):
     def __init__(self, user_id: int, channel_id: int, timeout: float = 300):
@@ -487,21 +578,87 @@ class SupportInteractionCog(commands.Cog):
         
         if extra.get("awaiting_payment_proof"):
             if message.attachments:
-                embed = create_embed(
-                    title="✅ Screenshot Received!",
-                    description=f"Thank you! Staff will verify your payment and process your order.\n\n**Product:** {extra.get('product_purchased', 'Your order')}",
-                    color=Config.SUCCESS_COLOR
-                )
-                await message.channel.send(embed=embed)
+                product_name = extra.get('product_purchased', 'Product')
+                order_id = await db_service.generate_unique_bm_order_id()
                 
-                extra["payment_proof_received"] = True
-                await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
-            else:
-                embed = create_embed(
-                    title="📝 Info Received",
-                    description="Thanks! Please also upload a screenshot of your payment.",
+                user = await db_service.get_or_create_user(
+                    discord_id=message.author.id,
+                    guild_id=message.guild.id,
+                    username=str(message.author),
+                    display_name=message.author.display_name
+                )
+                
+                order = await db_service.create_order(
+                    guild_id=message.guild.id,
+                    user_id=user.id,
+                    ticket_id=ticket.id if ticket else None,
+                    order_id=order_id,
+                    channel_id=message.channel.id,
+                    items=[{"name": product_name, "quantity": 1, "price": 0.0}],
+                    notes=f"Product: {product_name}"
+                )
+                
+                order_embed = create_embed(
+                    title="🎫 New Order Created",
+                    description=f"A new order has been created for {message.author.mention}",
                     color=Config.EMBED_COLOR
                 )
+                
+                order_embed.add_field(name="🆔 Order ID", value=f"**{order_id}**", inline=True)
+                order_embed.add_field(name="👤 Customer", value=message.author.mention, inline=True)
+                order_embed.add_field(name="📍 Ticket Channel", value=f"<#{message.channel.id}>", inline=True)
+                order_embed.add_field(name="🛍️ Product", value=product_name, inline=True)
+                order_embed.add_field(name="🕐 Created At", value=format_timestamp(get_eastern_time()), inline=True)
+                order_embed.add_field(name="📦 Status", value="🟡 **IN PROGRESS**", inline=True)
+                order_embed.set_footer(text="Click 'Mark Completed' when order is delivered")
+                
+                if message.attachments:
+                    order_embed.set_image(url=message.attachments[0].url)
+                
+                view = OrderCompletionView(order_id, self.bot)
+                order_msg = await message.channel.send(embed=order_embed, view=view)
+                
+                settings = await db_service.get_or_create_guild_settings(message.guild.id)
+                if settings.order_channel_id:
+                    order_channel = self.bot.get_channel(settings.order_channel_id)
+                    if order_channel:
+                        status_embed = create_embed(
+                            title="🎫 New Order Received",
+                            description=f"Order **{order_id}** has been created!",
+                            color=Config.EMBED_COLOR
+                        )
+                        status_embed.add_field(name="🆔 Order ID", value=f"**{order_id}**", inline=True)
+                        status_embed.add_field(name="👤 Customer", value=str(message.author), inline=True)
+                        status_embed.add_field(name="📍 Ticket", value=f"<#{message.channel.id}>", inline=True)
+                        status_embed.add_field(name="🛍️ Product", value=product_name, inline=True)
+                        status_embed.add_field(name="🕐 Time", value=format_timestamp(get_eastern_time()), inline=True)
+                        status_embed.add_field(name="📦 Status", value="🟡 **IN PROGRESS**", inline=True)
+                        if message.attachments:
+                            status_embed.set_image(url=message.attachments[0].url)
+                        status_embed.set_footer(text="View ticket channel for more details")
+                        await order_channel.send(embed=status_embed)
+                
+                extra["payment_proof_received"] = True
+                extra["order_id"] = order_id
+                await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+            else:
+                imvu_keywords = ["imvu", "username", "@", "my name", "deliver to"]
+                message_lower = message.content.lower()
+                
+                if any(kw in message_lower for kw in imvu_keywords):
+                    embed = create_embed(
+                        title="📝 IMVU Username Received",
+                        description=f"Got it! **{message.content}**\n\nNow please upload a screenshot of your PayPal payment.",
+                        color=Config.EMBED_COLOR
+                    )
+                    extra["customer_imvu"] = message.content
+                    await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+                else:
+                    embed = create_embed(
+                        title="📝 Info Received",
+                        description="Thanks! Please also upload a screenshot of your payment.",
+                        color=Config.EMBED_COLOR
+                    )
                 await message.channel.send(embed=embed)
             return
     

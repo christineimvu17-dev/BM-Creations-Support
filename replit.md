@@ -161,7 +161,15 @@ Supports: English, Spanish, French, German, Portuguese, Arabic, Chinese, Japanes
 2. User selects category (Triggers/Rooms/Poses/Other)
 3. User types product name → Bot shows product details, image, price
 4. User sees PayPal link → Clicks "I've Made Payment"
-5. User uploads screenshot + IMVU username → Staff processes order
+5. User uploads screenshot + IMVU username
+6. **Bot automatically creates a professional order with:**
+   - Unique BM-XXXX order ID (e.g., BM-4321)
+   - Customer info, product, time, status
+   - Payment screenshot attached
+   - "Mark Completed" button (only owner can use!)
+7. Order is sent to Order Status channel
+8. Owner clicks "Mark Completed" → Order shows as COMPLETED
+9. Customer gets DM notification
 
 ## Database Schema
 

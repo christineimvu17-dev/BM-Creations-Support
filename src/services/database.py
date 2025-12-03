@@ -37,6 +37,24 @@ class DatabaseService:
         random_suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         return f"{prefix}-{random_id}-{random_suffix}"
     
+    async def generate_unique_bm_order_id(self) -> str:
+        await self.ensure_initialized()
+        async with self.session_factory() as session:
+            for _ in range(10):
+                random_num = random.randint(1000, 9999)
+                order_id = f"BM-{random_num}"
+                result = await session.execute(
+                    select(Order).where(Order.order_id == order_id)
+                )
+                if not result.scalar_one_or_none():
+                    return order_id
+            timestamp = datetime.utcnow().strftime("%H%M")
+            return f"BM-{timestamp}{random.randint(10, 99)}"
+    
+    def generate_bm_order_id(self) -> str:
+        random_num = random.randint(1000, 9999)
+        return f"BM-{random_num}"
+    
     async def get_or_create_user(self, discord_id: int, guild_id: int, username: str = None, display_name: str = None) -> User:
         await self.ensure_initialized()
         async with self.session_factory() as session:
@@ -246,14 +264,16 @@ class DatabaseService:
             return message
     
     async def create_order(self, guild_id: int, user_id: int, ticket_id: int = None, 
-                          items: List[Dict] = None, notes: str = None) -> Order:
+                          items: List[Dict] = None, notes: str = None, 
+                          order_id: str = None, channel_id: int = None) -> Order:
         async with self.session_factory() as session:
             order = Order(
-                order_id=self.generate_id("ORD"),
+                order_id=order_id or self.generate_id("ORD"),
                 guild_id=guild_id,
                 user_id=user_id,
                 ticket_id=ticket_id,
-                notes=notes
+                notes=notes,
+                channel_id=channel_id
             )
             session.add(order)
             await session.flush()
