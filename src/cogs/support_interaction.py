@@ -13,9 +13,10 @@ from src.config import Config
 suppressed_channels: Set[int] = set()
 
 class ProductCategorySelect(ui.View):
-    def __init__(self, user_id: int, timeout: float = 300):
+    def __init__(self, user_id: int, channel_id: int, timeout: float = 300):
         super().__init__(timeout=timeout)
         self.user_id = user_id
+        self.channel_id = channel_id
         self.value = None
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -49,6 +50,13 @@ class ProductCategorySelect(ui.View):
             item.disabled = True
         await interaction.message.edit(view=self)
         
+        ticket = await db_service.get_ticket(channel_id=self.channel_id)
+        if ticket:
+            extra = ticket.extra_data or {}
+            extra["selected_category"] = self.value
+            extra["awaiting_product_name"] = True
+            await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+        
         embed = create_embed(
             title=f" {category}",
             description=f"Please type the **name** of the {category.lower()} product you want to purchase.\n\nFor example: `Night Club`, `Beach House`, `Dance Pose Pack`",
@@ -60,10 +68,11 @@ class ProductCategorySelect(ui.View):
         self.stop()
 
 class TicketWelcomeView(ui.View):
-    def __init__(self, user_id: int, bot: commands.Bot, timeout: float = None):
+    def __init__(self, user_id: int, bot: commands.Bot, channel_id: int, timeout: float = None):
         super().__init__(timeout=timeout)
         self.user_id = user_id
         self.bot = bot
+        self.channel_id = channel_id
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
@@ -83,14 +92,13 @@ class TicketWelcomeView(ui.View):
             color=Config.EMBED_COLOR
         )
         
-        view = ProductCategorySelect(self.user_id)
+        view = ProductCategorySelect(self.user_id, self.channel_id)
         await interaction.response.send_message(embed=embed, view=view)
         
-        ticket = await db_service.get_ticket(channel_id=interaction.channel.id)
+        ticket = await db_service.get_ticket(channel_id=self.channel_id)
         if ticket:
             extra = ticket.extra_data or {}
             extra["flow"] = "buy_product"
-            extra["awaiting_product_name"] = True
             await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
     
     @ui.button(label="Any Queries", style=discord.ButtonStyle.primary, emoji="", custom_id="any_queries")
@@ -107,7 +115,7 @@ class TicketWelcomeView(ui.View):
         
         await interaction.response.send_message(embed=embed)
         
-        ticket = await db_service.get_ticket(channel_id=interaction.channel.id)
+        ticket = await db_service.get_ticket(channel_id=self.channel_id)
         if ticket:
             extra = ticket.extra_data or {}
             extra["flow"] = "queries"
@@ -402,7 +410,7 @@ class SupportInteractionCog(commands.Cog):
         
         embed.set_footer(text="BM Creations Support | We're here to help!")
         
-        view = TicketWelcomeView(user.id, self.bot)
+        view = TicketWelcomeView(user.id, self.bot, channel.id)
         await channel.send(embed=embed, view=view)
     
     @commands.command(name="setsupportchannel")

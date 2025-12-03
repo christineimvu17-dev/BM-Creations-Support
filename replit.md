@@ -34,7 +34,9 @@ Preferred communication style: Simple, everyday language.
 │   │   ├── reminders.py    # Scheduled reminders
 │   │   ├── analytics.py    # Stats dashboard
 │   │   ├── recommendations.py # Personalized recommendations
-│   │   └── sync.py         # Server/product sync
+│   │   ├── sync.py         # Server/product sync
+│   │   ├── external_api.py # External API integration
+│   │   └── support_interaction.py # Smart auto-response & purchase flow
 │   └── utils/
 │       ├── helpers.py      # Utility functions
 │       └── translations.py # Multilingual support
@@ -121,6 +123,26 @@ Supports: English, Spanish, French, German, Portuguese, Arabic, Chinese, Japanes
 - `!fetchserver` - Sync server data & auto-configure
 - `!syncproducts #channel` - Sync products from channel
 - `!syncallchannels` - Sync from all channels
+
+### 15. Smart Support Interaction (Auto-Response)
+**Automatic Features:**
+- Bot auto-replies to user questions in support desk channel (no commands needed)
+- Bot stops responding when Founder/Admin messages in ticket (staff handling)
+- Interactive ticket welcome with "Buy Product" and "Any Queries" buttons
+
+**Product Purchase Flow:**
+1. User clicks "Buy Product" → Select category (Triggers/Rooms/Poses/Other)
+2. User types product name → Bot shows product details, image, price
+3. User sees PayPal link → Clicks "I've Made Payment"
+4. User uploads screenshot + IMVU username → Staff processes order
+
+**Admin Commands:**
+- `!setsupportchannel #channel` - Set auto-response channel
+- `!setpaypal <link>` - Set PayPal payment link
+- `!setfounderrole @role` - Add Founder role (bot stops responding when they message)
+- `!setadminrole @role` - Add Admin role
+- `!resumebot` - Resume bot responses in ticket (after staff is done)
+- `!supportstatus` - View support system configuration
 
 ## Database Schema
 
