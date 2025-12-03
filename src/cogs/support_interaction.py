@@ -77,7 +77,7 @@ class OrderCompletionView(ui.View):
         completed_embed.add_field(name="⏰ Completed At", value=format_timestamp(get_eastern_time()), inline=True)
         completed_embed.add_field(
             name="🌐 Connect With Us",
-            value="**Discord:** [Join Server](https://discord.gg/NR4Z9zeBW2)\n**Instagram:** [Follow Us](https://www.instagram.com/imvu_trustedshop)",
+            value="**Website:** [Visit Us](https://imvublackmarket.xyz/)\n**Instagram:** [Follow Us](https://www.instagram.com/imvublackmarket_official?igsh=MXhsaXo4dzByeTg4ZA==)",
             inline=False
         )
         completed_embed.set_footer(text="BM Creations Market | Trusted Since 2020")

@@ -239,8 +239,8 @@ class OrdersCog(commands.Cog):
             color=Config.SUCCESS_COLOR
         )
         
-        embed.add_field(name="Discord Server", value="[Join Server](https://discord.gg/NR4Z9zeBW2)", inline=False)
-        embed.add_field(name="Instagram", value="[Instagram Link](https://www.instagram.com/imvu_trustedshop)", inline=False)
+        embed.add_field(name="Official Website", value="[Visit Us](https://imvublackmarket.xyz/)", inline=False)
+        embed.add_field(name="Instagram", value="[Follow Us](https://www.instagram.com/imvublackmarket_official?igsh=MXhsaXo4dzByeTg4ZA==)", inline=False)
         embed.add_field(name="Order ID", value=order_id, inline=False)
         embed.add_field(name="Customer", value=f"<@{order.user.discord_id}>", inline=False)
         embed.add_field(name="Completed At", value=format_timestamp(get_eastern_time()), inline=False)
