@@ -33,11 +33,203 @@ def blur_name(name: str) -> str:
         return name[0] + "*" * (len(name) - 1)
     return name[0] + "*" * (len(name) - 2) + name[-1]
 
-class OrderCompletionView(ui.View):
-    def __init__(self, order_id: str, bot: commands.Bot, timeout: float = None):
+class OrderTimelineView(ui.View):
+    def __init__(self, order_id: str, bot: commands.Bot, customer_name: str = None, product_name: str = None, product_price: float = None, ticket_channel_id: int = None, timeout: float = None):
         super().__init__(timeout=timeout)
         self.order_id = order_id
         self.bot = bot
+        self.customer_name = customer_name
+        self.product_name = product_name
+        self.product_price = product_price
+        self.ticket_channel_id = ticket_channel_id
+        self.current_stage = 1
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not is_owner_user(interaction.user):
+            if not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message(
+                    "Only the owner can update order status!", 
+                    ephemeral=True
+                )
+                return False
+        return True
+    
+    def get_timeline_display(self, stage: int) -> str:
+        stages = [
+            ("Order Confirmed", "✅" if stage >= 1 else "⏳"),
+            ("Payment Received", "✅" if stage >= 2 else "⏳"),
+            ("Order Processing", "✅" if stage >= 3 else "⏳"),
+            ("Completed", "✅" if stage >= 4 else "⏳"),
+        ]
+        
+        lines = []
+        for i, (name, status) in enumerate(stages, 1):
+            if i < stage:
+                lines.append(f"{status} ~~{name}~~")
+            elif i == stage:
+                lines.append(f"**{status} {name}** ← Current")
+            else:
+                lines.append(f"{status} {name}")
+        
+        return "\n".join(lines)
+    
+    @ui.button(label="Payment Received", style=discord.ButtonStyle.primary, emoji="💰", custom_id="payment_received", row=0)
+    async def payment_received(self, interaction: discord.Interaction, button: ui.Button):
+        self.current_stage = 2
+        button.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
+        
+        embed = discord.Embed(
+            title="💰 Payment Received",
+            description=f"**Order:** {self.order_id}\n\n**Timeline:**\n{self.get_timeline_display(2)}",
+            color=0x00ff00
+        )
+        embed.set_footer(text="BM Creations Support • Trusted since 2020")
+        await interaction.response.send_message(embed=embed)
+    
+    @ui.button(label="Order Processing", style=discord.ButtonStyle.primary, emoji="⚙️", custom_id="order_processing", row=0)
+    async def order_processing(self, interaction: discord.Interaction, button: ui.Button):
+        self.current_stage = 3
+        button.disabled = True
+        for item in self.children:
+            if hasattr(item, 'custom_id') and item.custom_id == 'payment_received':
+                item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
+        
+        embed = discord.Embed(
+            title="⚙️ Order Processing",
+            description=f"**Order:** {self.order_id}\n\n**Timeline:**\n{self.get_timeline_display(3)}",
+            color=0xffa500
+        )
+        embed.set_footer(text="BM Creations Support • Trusted since 2020")
+        await interaction.response.send_message(embed=embed)
+    
+    @ui.button(label="Mark Complete", style=discord.ButtonStyle.success, emoji="✅", custom_id="mark_complete", row=0)
+    async def mark_complete(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer()
+        
+        order = await db_service.update_order_status(
+            self.order_id,
+            OrderStatus.DELIVERED,
+            staff_id=interaction.user.id
+        )
+        
+        if not order:
+            await interaction.followup.send("Order not found!", ephemeral=True)
+            return
+        
+        self.current_stage = 4
+        for item in self.children:
+            if hasattr(item, 'disabled'):
+                item.disabled = True
+        
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
+        
+        completed_time = format_timestamp(get_eastern_time())
+        blurred_customer = blur_name(self.customer_name) if self.customer_name else "Customer"
+        hidden_order_id = f"||{self.order_id}||"
+        hidden_ticket = f"||<#{self.ticket_channel_id}>||" if self.ticket_channel_id else "||Private||"
+        
+        ticket_embed = discord.Embed(
+            title="🎉 𝐎𝐫𝐝𝐞𝐫 𝐂𝐨𝐦𝐩𝐥𝐞𝐭𝐞𝐝!",
+            description=f"Thank you for shopping with **BM Creations Market!**\n\nYour order has been **successfully delivered**! 🚀",
+            color=0x00ff00
+        )
+        ticket_embed.add_field(name="🆔 Order ID", value=hidden_order_id, inline=True)
+        ticket_embed.add_field(name="👤 Customer", value=blurred_customer, inline=True)
+        ticket_embed.add_field(name="📦 Status", value="✅ **COMPLETED**", inline=True)
+        if self.product_name:
+            ticket_embed.add_field(name="🛒 Product", value=self.product_name, inline=True)
+        if self.product_price:
+            ticket_embed.add_field(name="💰 Price", value=f"${self.product_price}", inline=True)
+        ticket_embed.add_field(name="⏰ Completed At", value=completed_time, inline=True)
+        ticket_embed.add_field(
+            name="🌐 Connect With Us",
+            value="🔗 **Website:** [imvublackmarket.xyz](https://imvublackmarket.xyz/)\n📸 **Instagram:** [@imvublackmarket_official](https://www.instagram.com/imvublackmarket_official)",
+            inline=False
+        )
+        ticket_embed.add_field(name="📋 Ticket", value=hidden_ticket, inline=True)
+        ticket_embed.set_footer(text="BM Creations Support • Trusted since 2020")
+        
+        await interaction.followup.send(embed=ticket_embed)
+        
+        settings = await db_service.get_or_create_guild_settings(interaction.guild.id)
+        if settings.order_channel_id:
+            order_channel = self.bot.get_channel(settings.order_channel_id)
+            if order_channel:
+                status_embed = discord.Embed(
+                    title="✅ 𝐎𝐫𝐝𝐞𝐫 𝐃𝐞𝐥𝐢𝐯𝐞𝐫𝐞𝐝",
+                    description=f"Order has been **successfully delivered!** 🎉",
+                    color=0x00ff00
+                )
+                status_embed.add_field(name="🆔 Order ID", value=hidden_order_id, inline=True)
+                status_embed.add_field(name="👤 Customer", value=blurred_customer, inline=True)
+                status_embed.add_field(name="📦 Status", value="✅ **COMPLETED**", inline=True)
+                if self.product_name:
+                    status_embed.add_field(name="🛒 Product", value=self.product_name, inline=True)
+                if self.product_price:
+                    status_embed.add_field(name="💰 Price", value=f"${self.product_price}", inline=True)
+                status_embed.add_field(name="⏰ Completed At", value=completed_time, inline=True)
+                status_embed.add_field(name="✍️ Completed By", value=interaction.user.mention, inline=True)
+                status_embed.add_field(name="📋 Ticket", value=hidden_ticket, inline=True)
+                status_embed.add_field(
+                    name="🌐 Connect With Us",
+                    value="🔗 **Website:** [imvublackmarket.xyz](https://imvublackmarket.xyz/)\n📸 **Instagram:** [@imvublackmarket_official](https://www.instagram.com/imvublackmarket_official)",
+                    inline=False
+                )
+                status_embed.set_footer(text="BM Creations Support • Trusted since 2020")
+                await order_channel.send(embed=status_embed)
+        
+        try:
+            user = self.bot.get_user(order.user.discord_id)
+            if user:
+                dm_embed = discord.Embed(
+                    title="🎉 Your Order is Complete!",
+                    description=f"Your order **{self.order_id}** has been **successfully delivered!** 🚀\n\nThank you for choosing **BM Creations Market!**",
+                    color=0x00ff00
+                )
+                dm_embed.add_field(
+                    name="🌐 Connect With Us",
+                    value="🔗 **Website:** [imvublackmarket.xyz](https://imvublackmarket.xyz/)\n📸 **Instagram:** [@imvublackmarket_official](https://www.instagram.com/imvublackmarket_official)",
+                    inline=False
+                )
+                dm_embed.set_footer(text="BM Creations Support • Trusted since 2020")
+                await user.send(embed=dm_embed)
+        except:
+            pass
+        
+        try:
+            if interaction.channel:
+                current_name = interaction.channel.name
+                if "-pending" in current_name:
+                    new_name = current_name.replace("-pending", "-complete")
+                    await interaction.channel.edit(name=new_name)
+                elif "pending" in current_name:
+                    new_name = current_name.replace("pending", "complete")
+                    await interaction.channel.edit(name=new_name)
+        except:
+            pass
+        
+        self.stop()
+
+class OrderCompletionView(ui.View):
+    def __init__(self, order_id: str, bot: commands.Bot, customer_name: str = None, product_name: str = None, product_price: float = None, ticket_channel_id: int = None, timeout: float = None):
+        super().__init__(timeout=timeout)
+        self.order_id = order_id
+        self.bot = bot
+        self.customer_name = customer_name
+        self.product_name = product_name
+        self.product_price = product_price
+        self.ticket_channel_id = ticket_channel_id
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not is_owner_user(interaction.user):
@@ -71,45 +263,75 @@ class OrderCompletionView(ui.View):
         except:
             pass
         
-        completed_embed = create_embed(
-            title="✅ Order Completed!",
-            description="Thank you for shopping with **BM Creations Market!**\n\nYour order has been successfully delivered.",
-            color=Config.SUCCESS_COLOR
-        )
+        completed_time = format_timestamp(get_eastern_time())
+        blurred_customer = blur_name(self.customer_name) if self.customer_name else "Customer"
+        hidden_order_id = f"||{self.order_id}||"
+        hidden_ticket = f"||<#{self.ticket_channel_id}>||" if self.ticket_channel_id else "||Private||"
         
-        completed_embed.add_field(name="🆔 Order ID", value=f"**{self.order_id}**", inline=True)
-        completed_embed.add_field(name="📦 Status", value="✅ **COMPLETED**", inline=True)
-        completed_embed.add_field(name="⏰ Completed At", value=format_timestamp(get_eastern_time()), inline=True)
-        completed_embed.add_field(
+        ticket_embed = discord.Embed(
+            title="🎉 𝐎𝐫𝐝𝐞𝐫 𝐂𝐨𝐦𝐩𝐥𝐞𝐭𝐞𝐝!",
+            description=f"Thank you for shopping with **BM Creations Market!**\n\nYour order has been **successfully delivered**! 🚀",
+            color=0x00ff00
+        )
+        ticket_embed.add_field(name="🆔 Order ID", value=hidden_order_id, inline=True)
+        ticket_embed.add_field(name="👤 Customer", value=blurred_customer, inline=True)
+        ticket_embed.add_field(name="📦 Status", value="✅ **COMPLETED**", inline=True)
+        if self.product_name:
+            ticket_embed.add_field(name="🛒 Product", value=self.product_name, inline=True)
+        if self.product_price:
+            ticket_embed.add_field(name="💰 Price", value=f"${self.product_price}", inline=True)
+        ticket_embed.add_field(name="⏰ Completed At", value=completed_time, inline=True)
+        ticket_embed.add_field(
             name="🌐 Connect With Us",
-            value="**Website:** [Visit Us](https://imvublackmarket.xyz/)\n**Instagram:** [Follow Us](https://www.instagram.com/imvublackmarket_official?igsh=MXhsaXo4dzByeTg4ZA==)",
+            value="🔗 **Website:** [imvublackmarket.xyz](https://imvublackmarket.xyz/)\n📸 **Instagram:** [@imvublackmarket_official](https://www.instagram.com/imvublackmarket_official)",
             inline=False
         )
-        completed_embed.set_footer(text="BM Creations Market | Trusted Since 2020")
+        ticket_embed.add_field(name="📋 Ticket", value=hidden_ticket, inline=True)
+        ticket_embed.set_footer(text="BM Creations Support • Trusted since 2020")
         
-        await interaction.followup.send(embed=completed_embed)
+        await interaction.followup.send(embed=ticket_embed)
         
         settings = await db_service.get_or_create_guild_settings(interaction.guild.id)
         if settings.order_channel_id:
             order_channel = self.bot.get_channel(settings.order_channel_id)
             if order_channel:
-                status_embed = create_embed(
-                    title="✅ Order Completed",
-                    description=f"Order **{self.order_id}** has been marked as completed!",
-                    color=Config.SUCCESS_COLOR
+                status_embed = discord.Embed(
+                    title="✅ 𝐎𝐫𝐝𝐞𝐫 𝐃𝐞𝐥𝐢𝐯𝐞𝐫𝐞𝐝",
+                    description=f"Order has been **successfully delivered!** 🎉",
+                    color=0x00ff00
                 )
-                status_embed.add_field(name="Completed By", value=interaction.user.mention, inline=True)
-                status_embed.add_field(name="Time", value=format_timestamp(get_eastern_time()), inline=True)
+                status_embed.add_field(name="🆔 Order ID", value=hidden_order_id, inline=True)
+                status_embed.add_field(name="👤 Customer", value=blurred_customer, inline=True)
+                status_embed.add_field(name="📦 Status", value="✅ **COMPLETED**", inline=True)
+                if self.product_name:
+                    status_embed.add_field(name="🛒 Product", value=self.product_name, inline=True)
+                if self.product_price:
+                    status_embed.add_field(name="💰 Price", value=f"${self.product_price}", inline=True)
+                status_embed.add_field(name="⏰ Completed At", value=completed_time, inline=True)
+                status_embed.add_field(name="✍️ Completed By", value=interaction.user.mention, inline=True)
+                status_embed.add_field(name="📋 Ticket", value=hidden_ticket, inline=True)
+                status_embed.add_field(
+                    name="🌐 Connect With Us",
+                    value="🔗 **Website:** [imvublackmarket.xyz](https://imvublackmarket.xyz/)\n📸 **Instagram:** [@imvublackmarket_official](https://www.instagram.com/imvublackmarket_official)",
+                    inline=False
+                )
+                status_embed.set_footer(text="BM Creations Support • Trusted since 2020")
                 await order_channel.send(embed=status_embed)
         
         try:
             user = self.bot.get_user(order.user.discord_id)
             if user:
-                dm_embed = create_embed(
+                dm_embed = discord.Embed(
                     title="🎉 Your Order is Complete!",
-                    description=f"Your order **{self.order_id}** has been delivered!\n\nThank you for choosing BM Creations Market!",
-                    color=Config.SUCCESS_COLOR
+                    description=f"Your order **{self.order_id}** has been **successfully delivered!** 🚀\n\nThank you for choosing **BM Creations Market!**",
+                    color=0x00ff00
                 )
+                dm_embed.add_field(
+                    name="🌐 Connect With Us",
+                    value="🔗 **Website:** [imvublackmarket.xyz](https://imvublackmarket.xyz/)\n📸 **Instagram:** [@imvublackmarket_official](https://www.instagram.com/imvublackmarket_official)",
+                    inline=False
+                )
+                dm_embed.set_footer(text="BM Creations Support • Trusted since 2020")
                 await user.send(embed=dm_embed)
         except:
             pass
@@ -128,11 +350,259 @@ class OrderCompletionView(ui.View):
         
         self.stop()
 
-class ProductCategorySelect(ui.View):
-    def __init__(self, user_id: int, channel_id: int, timeout: float = 300):
+PERMANENT_TRIGGER_PRODUCTS = [
+    {"name": "King Cummy", "price": 35},
+    {"name": "Venom3", "price": 50},
+    {"name": "KingKong V4", "price": 40},
+    {"name": "Private BBC V5", "price": 55},
+    {"name": "King Cummy V8", "price": 50},
+    {"name": "Female Trigger", "price": 60},
+    {"name": "Red Venom", "price": 60},
+]
+
+GIFTING_TRIGGER_PRODUCTS = [
+    {"name": "HD Kong", "price": 38},
+    {"name": "BBC King Ultra", "price": 38},
+]
+
+class ProductButtonView(ui.View):
+    def __init__(self, user_id: int, channel_id: int, product: dict, is_permanent: bool, paypal_link: str, bot: commands.Bot, timeout: float = 600):
         super().__init__(timeout=timeout)
         self.user_id = user_id
         self.channel_id = channel_id
+        self.product = product
+        self.is_permanent = is_permanent
+        self.paypal_link = paypal_link
+        self.bot = bot
+        
+        if paypal_link and paypal_link.startswith("http"):
+            self.add_item(ui.Button(
+                label="PayPal",
+                style=discord.ButtonStyle.link,
+                emoji="💳",
+                url=paypal_link,
+                row=0
+            ))
+            self.add_item(ui.Button(
+                label="Credit Card",
+                style=discord.ButtonStyle.link,
+                emoji="💵",
+                url=paypal_link,
+                row=0
+            ))
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This menu is not for you!", ephemeral=True)
+            return False
+        return True
+    
+    @ui.button(label="I've Made Payment", style=discord.ButtonStyle.success, emoji="✅", custom_id="product_payment_made", row=1)
+    async def payment_made(self, interaction: discord.Interaction, button: ui.Button):
+        for item in self.children:
+            if hasattr(item, 'disabled'):
+                item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
+        
+        embed = create_embed(
+            title="✅ 𝐏𝐚𝐲𝐦𝐞𝐧𝐭 𝐂𝐨𝐧𝐟𝐢𝐫𝐦𝐚𝐭𝐢𝐨𝐧",
+            description=f"Thank you for purchasing **{self.product['name']}**!\n\n"
+                       f"**📸 Please send the following:**\n"
+                       f"1️⃣ Screenshot of your PayPal payment\n"
+                       f"2️⃣ Your **IMVU Username** (for delivery)\n\n"
+                       f"**⏳ Your order will be processed shortly!**",
+            color=Config.SUCCESS_COLOR
+        )
+        embed.set_footer(text="BM Creations Market | Upload your screenshot below")
+        
+        await interaction.response.send_message(embed=embed)
+        
+        ticket = await db_service.get_ticket(channel_id=self.channel_id)
+        if ticket:
+            extra = ticket.extra_data or {}
+            extra["awaiting_payment_proof"] = True
+            extra["product_purchased"] = self.product['name']
+            extra["product_price"] = self.product['price']
+            extra["is_permanent"] = self.is_permanent
+            await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+    
+    @ui.button(label="Back to Products", style=discord.ButtonStyle.secondary, emoji="⬅️", custom_id="back_to_products", row=1)
+    async def back_to_products(self, interaction: discord.Interaction, button: ui.Button):
+        ticket = await db_service.get_ticket(channel_id=self.channel_id)
+        if ticket and ticket.extra_data:
+            category = ticket.extra_data.get("selected_category", "permanent_triggers")
+            if category == "permanent_triggers":
+                view = PermanentTriggersView(self.user_id, self.channel_id, self.paypal_link, self.bot)
+                title = "🎯 Permanent Triggers"
+            else:
+                view = GiftingTriggersView(self.user_id, self.channel_id, self.paypal_link, self.bot)
+                title = "🎁 Gifting Triggers"
+            
+            embed = create_embed(
+                title=title,
+                description="Select the product you want to purchase:",
+                color=Config.EMBED_COLOR
+            )
+            await interaction.response.send_message(embed=embed, view=view)
+        else:
+            await interaction.response.send_message("Please start a new purchase.", ephemeral=True)
+
+class PermanentTriggersView(ui.View):
+    def __init__(self, user_id: int, channel_id: int, paypal_link: str, bot: commands.Bot, timeout: float = 600):
+        super().__init__(timeout=timeout)
+        self.user_id = user_id
+        self.channel_id = channel_id
+        self.paypal_link = paypal_link
+        self.bot = bot
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This menu is not for you!", ephemeral=True)
+            return False
+        return True
+    
+    async def show_product_detail(self, interaction: discord.Interaction, product: dict):
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
+        
+        ticket = await db_service.get_ticket(channel_id=self.channel_id)
+        if ticket:
+            extra = ticket.extra_data or {}
+            extra["selected_product"] = product["name"]
+            extra["product_price"] = product["price"]
+            await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+        
+        embed = discord.Embed(
+            title=f"🎯 {product['name']}",
+            color=Config.EMBED_COLOR
+        )
+        embed.add_field(name="💰 Price", value=f"**${product['price']}**", inline=True)
+        embed.add_field(name="⏳ Permanent", value="**Yes**", inline=True)
+        embed.add_field(name="🔐 Login Required", value="Yes (for uploading)", inline=True)
+        embed.add_field(name="🏠 Sex Room Required", value="**Yes**", inline=True)
+        embed.add_field(name="📝 Note", value="Send screenshot after payment", inline=False)
+        embed.set_footer(text="BM Creations Market | Trusted Since 2020")
+        
+        view = ProductButtonView(self.user_id, self.channel_id, product, True, self.paypal_link, self.bot)
+        await interaction.response.send_message(embed=embed, view=view)
+        self.stop()
+    
+    @ui.button(label="King Cummy - $35", style=discord.ButtonStyle.success, custom_id="perm_king_cummy", row=0)
+    async def king_cummy(self, interaction: discord.Interaction, button: ui.Button):
+        await self.show_product_detail(interaction, {"name": "King Cummy", "price": 35})
+    
+    @ui.button(label="Venom3 - $50", style=discord.ButtonStyle.success, custom_id="perm_venom3", row=0)
+    async def venom3(self, interaction: discord.Interaction, button: ui.Button):
+        await self.show_product_detail(interaction, {"name": "Venom3", "price": 50})
+    
+    @ui.button(label="KingKong V4 - $40", style=discord.ButtonStyle.success, custom_id="perm_kingkong_v4", row=0)
+    async def kingkong_v4(self, interaction: discord.Interaction, button: ui.Button):
+        await self.show_product_detail(interaction, {"name": "KingKong V4", "price": 40})
+    
+    @ui.button(label="Private BBC V5 - $55", style=discord.ButtonStyle.success, custom_id="perm_private_bbc_v5", row=1)
+    async def private_bbc_v5(self, interaction: discord.Interaction, button: ui.Button):
+        await self.show_product_detail(interaction, {"name": "Private BBC V5", "price": 55})
+    
+    @ui.button(label="King Cummy V8 - $50", style=discord.ButtonStyle.success, custom_id="perm_king_cummy_v8", row=1)
+    async def king_cummy_v8(self, interaction: discord.Interaction, button: ui.Button):
+        await self.show_product_detail(interaction, {"name": "King Cummy V8", "price": 50})
+    
+    @ui.button(label="Female Trigger - $60", style=discord.ButtonStyle.success, custom_id="perm_female_trigger", row=2)
+    async def female_trigger(self, interaction: discord.Interaction, button: ui.Button):
+        await self.show_product_detail(interaction, {"name": "Female Trigger", "price": 60})
+    
+    @ui.button(label="Red Venom - $60", style=discord.ButtonStyle.success, custom_id="perm_red_venom", row=2)
+    async def red_venom(self, interaction: discord.Interaction, button: ui.Button):
+        await self.show_product_detail(interaction, {"name": "Red Venom", "price": 60})
+    
+    @ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary, custom_id="perm_back", row=2)
+    async def back_button(self, interaction: discord.Interaction, button: ui.Button):
+        embed = create_embed(
+            title="🛍️ What would you like to buy?",
+            description="Please select a product category below:",
+            color=Config.EMBED_COLOR
+        )
+        view = ProductCategorySelect(self.user_id, self.channel_id, self.paypal_link, self.bot)
+        await interaction.response.send_message(embed=embed, view=view)
+        self.stop()
+
+class GiftingTriggersView(ui.View):
+    def __init__(self, user_id: int, channel_id: int, paypal_link: str, bot: commands.Bot, timeout: float = 600):
+        super().__init__(timeout=timeout)
+        self.user_id = user_id
+        self.channel_id = channel_id
+        self.paypal_link = paypal_link
+        self.bot = bot
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This menu is not for you!", ephemeral=True)
+            return False
+        return True
+    
+    async def show_product_detail(self, interaction: discord.Interaction, product: dict):
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
+        
+        ticket = await db_service.get_ticket(channel_id=self.channel_id)
+        if ticket:
+            extra = ticket.extra_data or {}
+            extra["selected_product"] = product["name"]
+            extra["product_price"] = product["price"]
+            await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+        
+        embed = discord.Embed(
+            title=f"🎁 {product['name']}",
+            color=Config.EMBED_COLOR
+        )
+        embed.add_field(name="💰 Price", value=f"**${product['price']}**", inline=True)
+        embed.add_field(name="⏳ Permanent", value="**6 Months**", inline=True)
+        embed.add_field(name="🔐 Login Required", value="Yes (for uploading)", inline=True)
+        embed.add_field(name="🏠 Sex Room Required", value="**Yes**", inline=True)
+        embed.add_field(name="📝 Note", value="Send screenshot after payment", inline=False)
+        embed.set_footer(text="BM Creations Market | Trusted Since 2020")
+        
+        view = ProductButtonView(self.user_id, self.channel_id, product, False, self.paypal_link, self.bot)
+        await interaction.response.send_message(embed=embed, view=view)
+        self.stop()
+    
+    @ui.button(label="HD Kong - $38", style=discord.ButtonStyle.primary, custom_id="gift_hd_kong", row=0)
+    async def hd_kong(self, interaction: discord.Interaction, button: ui.Button):
+        await self.show_product_detail(interaction, {"name": "HD Kong", "price": 38})
+    
+    @ui.button(label="BBC King Ultra - $38", style=discord.ButtonStyle.primary, custom_id="gift_bbc_king_ultra", row=0)
+    async def bbc_king_ultra(self, interaction: discord.Interaction, button: ui.Button):
+        await self.show_product_detail(interaction, {"name": "BBC King Ultra", "price": 38})
+    
+    @ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary, custom_id="gift_back", row=0)
+    async def back_button(self, interaction: discord.Interaction, button: ui.Button):
+        embed = create_embed(
+            title="🛍️ What would you like to buy?",
+            description="Please select a product category below:",
+            color=Config.EMBED_COLOR
+        )
+        view = ProductCategorySelect(self.user_id, self.channel_id, self.paypal_link, self.bot)
+        await interaction.response.send_message(embed=embed, view=view)
+        self.stop()
+
+class ProductCategorySelect(ui.View):
+    def __init__(self, user_id: int, channel_id: int, paypal_link: str = None, bot: commands.Bot = None, timeout: float = 300):
+        super().__init__(timeout=timeout)
+        self.user_id = user_id
+        self.channel_id = channel_id
+        self.paypal_link = paypal_link or ""
+        self.bot = bot
         self.value = None
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -144,12 +614,12 @@ class ProductCategorySelect(ui.View):
     @ui.button(label="Permanent Triggers", style=discord.ButtonStyle.success, emoji="🎯", custom_id="cat_permanent_triggers", row=0)
     async def permanent_triggers_button(self, interaction: discord.Interaction, button: ui.Button):
         self.value = "permanent_triggers"
-        await self.ask_product_name(interaction, "Permanent Triggers")
+        await self.show_products(interaction, "permanent_triggers")
     
     @ui.button(label="Gifting Triggers", style=discord.ButtonStyle.primary, emoji="🎁", custom_id="cat_gifting_triggers", row=0)
     async def gifting_triggers_button(self, interaction: discord.Interaction, button: ui.Button):
         self.value = "gifting_triggers"
-        await self.ask_product_name(interaction, "Gifting Triggers")
+        await self.show_products(interaction, "gifting_triggers")
     
     @ui.button(label="Rooms", style=discord.ButtonStyle.primary, emoji="🏠", custom_id="cat_rooms", row=1)
     async def rooms_button(self, interaction: discord.Interaction, button: ui.Button):
@@ -160,6 +630,41 @@ class ProductCategorySelect(ui.View):
     async def poses_button(self, interaction: discord.Interaction, button: ui.Button):
         self.value = "long_sex_poses"
         await self.ask_product_name(interaction, "Long Sex Poses")
+    
+    async def show_products(self, interaction: discord.Interaction, category: str):
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
+        
+        ticket = await db_service.get_ticket(channel_id=self.channel_id)
+        if ticket:
+            extra = ticket.extra_data or {}
+            extra["selected_category"] = category
+            await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+        
+        settings = await db_service.get_or_create_guild_settings(interaction.guild.id)
+        paypal_link = settings.paypal_link or self.paypal_link
+        
+        if category == "permanent_triggers":
+            embed = create_embed(
+                title="🎯 Permanent Triggers",
+                description="Select the product you want to purchase:\n\n*All Permanent Triggers include lifetime warranty*",
+                color=Config.EMBED_COLOR
+            )
+            view = PermanentTriggersView(self.user_id, self.channel_id, paypal_link, self.bot)
+        else:
+            embed = create_embed(
+                title="🎁 Gifting Triggers",
+                description="Select the product you want to purchase:\n\n*Gifting Triggers have a 6-month warranty*",
+                color=Config.EMBED_COLOR
+            )
+            view = GiftingTriggersView(self.user_id, self.channel_id, paypal_link, self.bot)
+        
+        await interaction.response.send_message(embed=embed, view=view)
+        self.stop()
     
     async def ask_product_name(self, interaction: discord.Interaction, category: str):
         for item in self.children:
@@ -177,8 +682,6 @@ class ProductCategorySelect(ui.View):
             await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
         
         examples = {
-            "Permanent Triggers": "Night Club, Beach House, Luxury Mansion",
-            "Gifting Triggers": "Gift Pack, Surprise Box, Special Edition",
             "Rooms": "Bedroom, Lounge, Pool Party",
             "Long Sex Poses": "Romantic Pack, Couples Edition, Premium Bundle"
         }
@@ -215,13 +718,16 @@ class TicketWelcomeView(ui.View):
         except:
             pass
         
+        settings = await db_service.get_or_create_guild_settings(interaction.guild.id)
+        paypal_link = settings.paypal_link or ""
+        
         embed = create_embed(
             title="🛍️ What would you like to buy?",
             description="Please select a product category below:",
             color=Config.EMBED_COLOR
         )
         
-        view = ProductCategorySelect(self.user_id, self.channel_id)
+        view = ProductCategorySelect(self.user_id, self.channel_id, paypal_link, self.bot)
         await interaction.response.send_message(embed=embed, view=view)
         
         ticket = await db_service.get_ticket(channel_id=self.channel_id)
@@ -723,6 +1229,9 @@ class SupportInteractionCog(commands.Cog):
         if extra.get("awaiting_payment_proof"):
             if message.attachments:
                 product_name = extra.get('product_purchased', 'Product')
+                product_price = extra.get('product_price', 0)
+                is_permanent = extra.get('is_permanent', True)
+                customer_imvu = extra.get('customer_imvu', '')
                 order_id = await db_service.generate_unique_bm_order_id()
                 
                 user = await db_service.get_or_create_user(
@@ -738,50 +1247,69 @@ class SupportInteractionCog(commands.Cog):
                     ticket_id=ticket.id if ticket else None,
                     order_id=order_id,
                     channel_id=message.channel.id,
-                    items=[{"name": product_name, "quantity": 1, "price": 0.0}],
-                    notes=f"Product: {product_name}"
+                    items=[{"name": product_name, "quantity": 1, "price": float(product_price) if product_price else 0.0}],
+                    notes=f"Product: {product_name} | IMVU: {customer_imvu}"
                 )
                 
                 blurred_customer = blur_name(message.author.display_name)
+                warranty = "Permanent" if is_permanent else "6 Months"
                 
-                order_embed = create_embed(
-                    title="🎫 New Order Created",
-                    description=f"A new order has been created",
+                timeline_display = "✅ **Order Confirmed** ← Current\n⏳ Payment Received\n⏳ Order Processing\n⏳ Completed"
+                
+                order_embed = discord.Embed(
+                    title="🎫 𝐍𝐞𝐰 𝐎𝐫𝐝𝐞𝐫 𝐂𝐫𝐞𝐚𝐭𝐞𝐝",
+                    description=f"A new order has been placed!",
                     color=Config.EMBED_COLOR
                 )
                 
                 order_embed.add_field(name="🆔 Order ID", value=f"**{order_id}**", inline=True)
                 order_embed.add_field(name="👤 Customer", value=f"||{blurred_customer}||", inline=True)
-                order_embed.add_field(name="📍 Ticket Channel", value=f"<#{message.channel.id}>", inline=True)
+                order_embed.add_field(name="📍 Ticket", value=f"||<#{message.channel.id}>||", inline=True)
                 order_embed.add_field(name="🛍️ Product", value=product_name, inline=True)
+                if product_price:
+                    order_embed.add_field(name="💰 Price", value=f"${product_price}", inline=True)
+                order_embed.add_field(name="⏳ Warranty", value=warranty, inline=True)
+                if customer_imvu:
+                    order_embed.add_field(name="🎮 IMVU", value=customer_imvu, inline=True)
                 order_embed.add_field(name="🕐 Created At", value=format_timestamp(get_eastern_time()), inline=True)
-                order_embed.add_field(name="📦 Status", value="🟡 **IN PROGRESS**", inline=True)
-                order_embed.set_footer(text="Click 'Mark Completed' when order is delivered")
+                order_embed.add_field(name="📦 Status", value="🟡 **ORDER CONFIRMED**", inline=True)
+                order_embed.add_field(name="📊 Timeline", value=timeline_display, inline=False)
+                order_embed.set_footer(text="BM Creations Support • Trusted since 2020")
                 
                 if message.attachments:
                     order_embed.set_image(url=message.attachments[0].url)
                 
-                view = OrderCompletionView(order_id, self.bot)
+                view = OrderTimelineView(
+                    order_id, 
+                    self.bot, 
+                    customer_name=message.author.display_name,
+                    product_name=product_name,
+                    product_price=product_price,
+                    ticket_channel_id=message.channel.id
+                )
                 order_msg = await message.channel.send(embed=order_embed, view=view)
                 
                 settings = await db_service.get_or_create_guild_settings(message.guild.id)
                 if settings.order_channel_id:
                     order_channel = self.bot.get_channel(settings.order_channel_id)
                     if order_channel:
-                        status_embed = create_embed(
-                            title="🎫 New Order Received",
+                        status_embed = discord.Embed(
+                            title="🎫 𝐍𝐞𝐰 𝐎𝐫𝐝𝐞𝐫 𝐑𝐞𝐜𝐞𝐢𝐯𝐞𝐝",
                             description=f"Order **{order_id}** has been created!",
                             color=Config.EMBED_COLOR
                         )
                         status_embed.add_field(name="🆔 Order ID", value=f"**{order_id}**", inline=True)
                         status_embed.add_field(name="👤 Customer", value=f"||{blurred_customer}||", inline=True)
-                        status_embed.add_field(name="📍 Ticket", value=f"<#{message.channel.id}>", inline=True)
+                        status_embed.add_field(name="📍 Ticket", value=f"||<#{message.channel.id}>||", inline=True)
                         status_embed.add_field(name="🛍️ Product", value=product_name, inline=True)
+                        if product_price:
+                            status_embed.add_field(name="💰 Price", value=f"${product_price}", inline=True)
+                        status_embed.add_field(name="⏳ Warranty", value=warranty, inline=True)
                         status_embed.add_field(name="🕐 Time", value=format_timestamp(get_eastern_time()), inline=True)
-                        status_embed.add_field(name="📦 Status", value="🟡 **IN PROGRESS**", inline=True)
+                        status_embed.add_field(name="📦 Status", value="🟡 **ORDER CONFIRMED**", inline=True)
                         if message.attachments:
                             status_embed.set_image(url=message.attachments[0].url)
-                        status_embed.set_footer(text="View ticket channel for more details")
+                        status_embed.set_footer(text="BM Creations Support • Trusted since 2020")
                         await order_channel.send(embed=status_embed)
                 
                 extra["payment_proof_received"] = True

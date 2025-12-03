@@ -12,15 +12,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **December 3, 2025**: Updated command permissions - public commands: /newticket, /order, /trackorder, /setlanguage
-- **December 3, 2025**: Added ticket limit (max 2 per user) and owner notification on new tickets
-- **December 3, 2025**: Updated product categories: Permanent Triggers, Gifting Triggers, Rooms, Long Sex Poses
-- **December 3, 2025**: Product display now shows: Warranty (Permanent), VIP (Onetime Platinum VIP), Private Room Note (for triggers)
-- **December 3, 2025**: Added PayPal and Credit Card payment buttons (both link to same PayPal URL)
-- **December 3, 2025**: /order command now sends DM with order history summary (total orders, completed, total spent)
-- **December 3, 2025**: Improved smart response system for queries - provides helpful answers with emojis
-- **December 3, 2025**: Bot answers questions automatically in threads without needing commands
-- **December 3, 2025**: Channel-specific auto-response behavior configured
+- **December 3, 2025**: Added interactive product buttons for Permanent Triggers (7 products) and Gifting Triggers (2 products)
+- **December 3, 2025**: Implemented order timeline with 4 stages: Order Confirmed → Payment Received → Processing → Complete
+- **December 3, 2025**: Enhanced completion messages with dual messaging (ticket + order status channel)
+- **December 3, 2025**: Added privacy features: blurred customer names, hidden order IDs and ticket channels
+- **December 3, 2025**: Branding in all messages: Website link, Instagram link, "Trusted since 2020" footer
+- **December 3, 2025**: Close Ticket button added to prevent orphaned tickets
+- **December 3, 2025**: Ticket limit only counts OPEN tickets (not total lifetime)
+- **December 3, 2025**: Dynamic channel naming: username-pending → username-complete
 
 ## Access Control
 
