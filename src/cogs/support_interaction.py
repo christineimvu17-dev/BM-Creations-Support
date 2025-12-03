@@ -28,6 +28,11 @@ def is_owner_user(user: discord.User) -> bool:
             return True
     return False
 
+def blur_name(name: str) -> str:
+    if len(name) <= 2:
+        return name[0] + "*" * (len(name) - 1)
+    return name[0] + "*" * (len(name) - 2) + name[-1]
+
 class OrderCompletionView(ui.View):
     def __init__(self, order_id: str, bot: commands.Bot, timeout: float = None):
         super().__init__(timeout=timeout)
@@ -598,14 +603,16 @@ class SupportInteractionCog(commands.Cog):
                     notes=f"Product: {product_name}"
                 )
                 
+                blurred_customer = blur_name(message.author.display_name)
+                
                 order_embed = create_embed(
                     title="🎫 New Order Created",
-                    description=f"A new order has been created for {message.author.mention}",
+                    description=f"A new order has been created",
                     color=Config.EMBED_COLOR
                 )
                 
                 order_embed.add_field(name="🆔 Order ID", value=f"**{order_id}**", inline=True)
-                order_embed.add_field(name="👤 Customer", value=message.author.mention, inline=True)
+                order_embed.add_field(name="👤 Customer", value=f"||{blurred_customer}||", inline=True)
                 order_embed.add_field(name="📍 Ticket Channel", value=f"<#{message.channel.id}>", inline=True)
                 order_embed.add_field(name="🛍️ Product", value=product_name, inline=True)
                 order_embed.add_field(name="🕐 Created At", value=format_timestamp(get_eastern_time()), inline=True)
@@ -628,7 +635,7 @@ class SupportInteractionCog(commands.Cog):
                             color=Config.EMBED_COLOR
                         )
                         status_embed.add_field(name="🆔 Order ID", value=f"**{order_id}**", inline=True)
-                        status_embed.add_field(name="👤 Customer", value=str(message.author), inline=True)
+                        status_embed.add_field(name="👤 Customer", value=f"||{blurred_customer}||", inline=True)
                         status_embed.add_field(name="📍 Ticket", value=f"<#{message.channel.id}>", inline=True)
                         status_embed.add_field(name="🛍️ Product", value=product_name, inline=True)
                         status_embed.add_field(name="🕐 Time", value=format_timestamp(get_eastern_time()), inline=True)

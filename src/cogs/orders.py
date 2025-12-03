@@ -86,50 +86,61 @@ class OrdersCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
     
-    @app_commands.command(name="newwork", description="Manually create a new order with BM ID (Owner only)")
+    def blur_name(self, name: str) -> str:
+        if len(name) <= 2:
+            return name[0] + "*" * (len(name) - 1)
+        return name[0] + "*" * (len(name) - 2) + name[-1]
+    
+    @app_commands.command(name="newwork", description="Create a new order for the customer in this ticket (Owner only)")
     @app_commands.describe(
-        customer="The customer to create the order for",
-        product="Product name",
-        notes="Optional notes about the order"
+        product="Product name"
     )
     @app_commands.default_permissions(administrator=True)
-    async def new_work(self, interaction: discord.Interaction, customer: discord.Member, product: str, notes: str = None):
+    async def new_work(self, interaction: discord.Interaction, product: str):
         await interaction.response.defer()
+        
+        ticket = await db_service.get_ticket(channel_id=interaction.channel.id)
+        
+        if not ticket:
+            await interaction.followup.send("This command must be used in a ticket channel!", ephemeral=True)
+            return
+        
+        customer_id = ticket.user.discord_id
+        customer = interaction.guild.get_member(customer_id)
+        
+        if not customer:
+            try:
+                customer = await interaction.guild.fetch_member(customer_id)
+            except:
+                await interaction.followup.send("Could not find the customer for this ticket.", ephemeral=True)
+                return
         
         order_id = await db_service.generate_unique_bm_order_id()
         
-        user = await db_service.get_or_create_user(
-            discord_id=customer.id,
-            guild_id=interaction.guild.id,
-            username=str(customer),
-            display_name=customer.display_name
-        )
-        
         order = await db_service.create_order(
             guild_id=interaction.guild.id,
-            user_id=user.id,
+            user_id=ticket.user.id,
             order_id=order_id,
+            ticket_id=ticket.id,
             channel_id=interaction.channel.id,
             items=[{"name": product, "quantity": 1, "price": 0.0}],
-            notes=notes or f"Product: {product}"
+            notes=f"Product: {product}"
         )
+        
+        blurred_name = self.blur_name(customer.display_name)
         
         order_embed = create_embed(
             title="🎫 New Order Created",
-            description=f"A new order has been created for {customer.mention}",
+            description=f"A new order has been created",
             color=Config.EMBED_COLOR
         )
         
         order_embed.add_field(name="🆔 Order ID", value=f"**{order_id}**", inline=True)
-        order_embed.add_field(name="👤 Customer", value=customer.mention, inline=True)
-        order_embed.add_field(name="📍 Channel", value=f"<#{interaction.channel.id}>", inline=True)
+        order_embed.add_field(name="👤 Customer", value=f"||{blurred_name}||", inline=True)
+        order_embed.add_field(name="📍 Ticket", value=f"<#{interaction.channel.id}>", inline=True)
         order_embed.add_field(name="🛍️ Product", value=product, inline=True)
         order_embed.add_field(name="🕐 Created At", value=format_timestamp(get_eastern_time()), inline=True)
         order_embed.add_field(name="📦 Status", value="🟡 **IN PROGRESS**", inline=True)
-        
-        if notes:
-            order_embed.add_field(name="📝 Notes", value=notes, inline=False)
-        
         order_embed.set_footer(text="Click 'Mark Completed' when order is delivered")
         
         view = ManualOrderCompletionView(order_id, self.bot)
@@ -145,11 +156,11 @@ class OrdersCog(commands.Cog):
                     color=Config.EMBED_COLOR
                 )
                 status_embed.add_field(name="🆔 Order ID", value=f"**{order_id}**", inline=True)
-                status_embed.add_field(name="👤 Customer", value=str(customer), inline=True)
+                status_embed.add_field(name="👤 Customer", value=f"||{blurred_name}||", inline=True)
                 status_embed.add_field(name="🛍️ Product", value=product, inline=True)
                 status_embed.add_field(name="🕐 Time", value=format_timestamp(get_eastern_time()), inline=True)
                 status_embed.add_field(name="📦 Status", value="🟡 **IN PROGRESS**", inline=True)
-                status_embed.set_footer(text="Manual order created by owner")
+                status_embed.set_footer(text="Order created from ticket")
                 await order_channel.send(embed=status_embed)
     
     @app_commands.command(name="order", description="Create a new order")
