@@ -10,9 +10,10 @@ from src.models.database import TicketStatus, OrderStatus
 from src.utils.helpers import create_embed, is_staff, format_timestamp, get_eastern_time, get_status_emoji
 from src.config import Config
 
-suppressed_channels: Set[int] = set()
+suppressed_channels: Dict[int, datetime] = {}
 processed_threads: Set[int] = set()
 OWNER_USERNAMES = ["sizuka42"]
+SUPPRESSION_TIMEOUT_MINUTES = 30
 
 IGNORED_CATEGORIES = ["chat zone", "more fun", "chatzone", "morefun"]
 PURCHASE_KEYWORDS = [
@@ -1130,12 +1131,17 @@ class SupportInteractionCog(commands.Cog):
             return
         
         if message.channel.id in suppressed_channels:
-            return
+            suppressed_time = suppressed_channels[message.channel.id]
+            minutes_elapsed = (datetime.now() - suppressed_time).total_seconds() / 60
+            if minutes_elapsed < SUPPRESSION_TIMEOUT_MINUTES:
+                return
+            else:
+                del suppressed_channels[message.channel.id]
         
         if self.is_founder_or_admin(message.author, settings):
             ticket = await db_service.get_ticket(channel_id=message.channel.id)
             if ticket:
-                suppressed_channels.add(message.channel.id)
+                suppressed_channels[message.channel.id] = datetime.now()
                 extra = ticket.extra_data or {}
                 extra["staff_handling"] = True
                 extra["staff_id"] = message.author.id
@@ -1568,7 +1574,7 @@ class SupportInteractionCog(commands.Cog):
             return
         
         if interaction.channel.id in suppressed_channels:
-            suppressed_channels.remove(interaction.channel.id)
+            del suppressed_channels[interaction.channel.id]
         
         extra = ticket.extra_data or {}
         extra["staff_handling"] = False
