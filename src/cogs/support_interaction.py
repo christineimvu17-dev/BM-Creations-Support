@@ -114,6 +114,18 @@ class OrderCompletionView(ui.View):
         except:
             pass
         
+        try:
+            if interaction.channel:
+                current_name = interaction.channel.name
+                if "-pending" in current_name:
+                    new_name = current_name.replace("-pending", "-complete")
+                    await interaction.channel.edit(name=new_name)
+                elif "pending" in current_name:
+                    new_name = current_name.replace("pending", "complete")
+                    await interaction.channel.edit(name=new_name)
+        except:
+            pass
+        
         self.stop()
 
 class ProductCategorySelect(ui.View):

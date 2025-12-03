@@ -42,9 +42,13 @@ class TicketsCog(commands.Cog):
         await db_service.update_guild_settings(guild.id, ticket_category_id=category.id)
         return category
     
-    async def count_user_tickets(self, user_id: int, guild_id: int) -> int:
+    async def count_user_open_tickets(self, user_id: int, guild_id: int) -> int:
         tickets = await db_service.get_user_tickets(user_id, guild_id)
-        return len(tickets) if tickets else 0
+        if not tickets:
+            return 0
+        open_statuses = [TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.PENDING]
+        open_tickets = [t for t in tickets if t.status in open_statuses]
+        return len(open_tickets)
     
     @app_commands.command(name="newticket", description="Create a new support ticket")
     @app_commands.describe(subject="The subject/reason for your ticket")
@@ -56,12 +60,12 @@ class TicketsCog(commands.Cog):
         )
         lang = user.language
         
-        ticket_count = await self.count_user_tickets(user.id, interaction.guild.id)
+        open_ticket_count = await self.count_user_open_tickets(user.id, interaction.guild.id)
         
-        if ticket_count >= MAX_TICKETS_PER_USER:
+        if open_ticket_count >= MAX_TICKETS_PER_USER:
             embed = create_embed(
                 title="⚠️ Ticket Limit Reached",
-                description=f"You have already created **{MAX_TICKETS_PER_USER} tickets**.\n\nPlease wait for your existing tickets to be resolved before creating a new one.",
+                description=f"You already have **{open_ticket_count} open tickets**.\n\nPlease wait for your existing tickets to be closed before creating a new one.",
                 color=Config.WARNING_COLOR
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -84,8 +88,9 @@ class TicketsCog(commands.Cog):
             if role.name.lower() in ["staff", "moderator", "admin", "support", "founder"]:
                 overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         
+        safe_username = interaction.user.name[:20].replace(" ", "-").lower()
         channel = await interaction.guild.create_text_channel(
-            name=f"ticket-{interaction.user.name}",
+            name=f"{safe_username}-pending",
             category=category,
             overwrites=overwrites,
             reason=f"Ticket created by {interaction.user}"
