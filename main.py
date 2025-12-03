@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import os
 import asyncio
 from flask import Flask
@@ -55,26 +56,38 @@ async def load_cogs():
             print(f"Failed to load cog {cog}: {e}")
 
 @bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send("You don't have permission to use this command.", delete_after=5)
-    elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"Missing required argument: {error.param.name}", delete_after=5)
-    elif isinstance(error, commands.CommandNotFound):
-        pass
-    elif isinstance(error, commands.BadArgument):
-        await ctx.send(f"Invalid argument provided.", delete_after=5)
+async def on_ready():
+    print(f"{bot.user.name} is now online and ready!")
+    
+    try:
+        await db_service.initialize()
+        print("Database initialized successfully!")
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+    
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} slash commands globally!")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
+
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+    elif isinstance(error, app_commands.CommandOnCooldown):
+        await interaction.response.send_message(f"Command on cooldown. Try again in {error.retry_after:.1f}s", ephemeral=True)
     else:
-        print(f"Error in command {ctx.command}: {error}")
+        print(f"Error in slash command: {error}")
         import traceback
         traceback.print_exception(type(error), error, error.__traceback__)
-
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-    print(f"Message received: {message.content[:50]}...")
-    await bot.process_commands(message)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send("An error occurred while processing this command.", ephemeral=True)
+            else:
+                await interaction.response.send_message("An error occurred while processing this command.", ephemeral=True)
+        except:
+            pass
 
 async def main():
     async with bot:

@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 from datetime import datetime
 
 from src.services.database import db_service
@@ -12,23 +13,21 @@ class OrdersCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
     
-    @commands.command(name="order")
-    async def create_order(self, ctx: commands.Context, *, details: str):
-        try:
-            await ctx.message.delete()
-        except:
-            pass
+    @app_commands.command(name="order", description="Create a new order")
+    @app_commands.describe(details="Order details/description")
+    async def create_order(self, interaction: discord.Interaction, details: str):
+        await interaction.response.defer()
         
         user = await db_service.get_or_create_user(
-            ctx.author.id, ctx.guild.id, str(ctx.author), ctx.author.display_name
+            interaction.user.id, interaction.guild.id, str(interaction.user), interaction.user.display_name
         )
         
-        ticket = await db_service.get_ticket(channel_id=ctx.channel.id)
+        ticket = await db_service.get_ticket(channel_id=interaction.channel.id)
         
         items = [{"name": details, "quantity": 1, "price": 0.0}]
         
         order = await db_service.create_order(
-            guild_id=ctx.guild.id,
+            guild_id=interaction.guild.id,
             user_id=user.id,
             ticket_id=ticket.id if ticket else None,
             items=items,
@@ -44,25 +43,26 @@ class OrdersCog(commands.Cog):
         )
         
         embed.add_field(name="Order ID", value=order.order_id, inline=True)
-        embed.add_field(name="Customer", value=ctx.author.mention, inline=True)
+        embed.add_field(name="Customer", value=interaction.user.mention, inline=True)
         embed.add_field(name="Status", value=f"{get_status_emoji('pending')} Pending", inline=True)
         embed.add_field(name="Order Details", value=details, inline=False)
         embed.add_field(name="Created At", value=format_timestamp(get_eastern_time()), inline=False)
         
-        embed.set_footer(text=f"Track your order with: !trackorder {order.order_id}")
+        embed.set_footer(text=f"Track your order with: /trackorder {order.order_id}")
         
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
     
-    @commands.command(name="trackorder")
-    async def track_order(self, ctx: commands.Context, order_id: str):
+    @app_commands.command(name="trackorder", description="Track an order by ID")
+    @app_commands.describe(order_id="The order ID to track")
+    async def track_order(self, interaction: discord.Interaction, order_id: str):
         order = await db_service.get_order(order_id)
         
         if not order:
-            await ctx.send("Order not found. Please check the order ID.", delete_after=5)
+            await interaction.response.send_message("Order not found. Please check the order ID.", ephemeral=True)
             return
         
-        if order.user.discord_id != ctx.author.id and not is_staff(ctx.author):
-            await ctx.send("You don't have permission to view this order.", delete_after=5)
+        if order.user.discord_id != interaction.user.id and not is_staff(interaction.user):
+            await interaction.response.send_message("You don't have permission to view this order.", ephemeral=True)
             return
         
         status_timeline = [
@@ -113,14 +113,14 @@ class OrdersCog(commands.Cog):
             ])
             embed.add_field(name="Recent Updates", value=events_text[:1024], inline=False)
         
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
     
-    @commands.command(name="myorders")
-    async def my_orders(self, ctx: commands.Context):
-        orders = await db_service.get_user_orders(ctx.author.id, ctx.guild.id)
+    @app_commands.command(name="myorders", description="View your orders")
+    async def my_orders(self, interaction: discord.Interaction):
+        orders = await db_service.get_user_orders(interaction.user.id, interaction.guild.id)
         
         if not orders:
-            await ctx.send("You have no orders yet.", delete_after=5)
+            await interaction.response.send_message("You have no orders yet.", ephemeral=True)
             return
         
         embed = create_embed(
@@ -137,18 +137,28 @@ class OrdersCog(commands.Cog):
             
             embed.add_field(name=f"Order: {order.order_id}", value=order_info, inline=False)
         
-        embed.set_footer(text="Use !trackorder <order_id> to track a specific order")
-        await ctx.send(embed=embed)
+        embed.set_footer(text="Use /trackorder <order_id> to track a specific order")
+        await interaction.response.send_message(embed=embed)
     
-    @commands.command(name="updateorder")
-    async def update_order(self, ctx: commands.Context, order_id: str, status: str, *, notes: str = None):
-        try:
-            await ctx.message.delete()
-        except:
-            pass
-        
-        if not is_staff(ctx.author):
-            await ctx.send("You don't have permission to use this command.", delete_after=5)
+    @app_commands.command(name="updateorder", description="Update an order status (Staff only)")
+    @app_commands.describe(
+        order_id="The order ID to update",
+        status="New status for the order",
+        notes="Optional notes about the update"
+    )
+    @app_commands.choices(status=[
+        app_commands.Choice(name="Pending", value="pending"),
+        app_commands.Choice(name="Confirmed", value="confirmed"),
+        app_commands.Choice(name="Processing", value="processing"),
+        app_commands.Choice(name="Shipped", value="shipped"),
+        app_commands.Choice(name="Delivered", value="delivered"),
+        app_commands.Choice(name="Cancelled", value="cancelled"),
+        app_commands.Choice(name="Refunded", value="refunded"),
+    ])
+    @app_commands.default_permissions(manage_messages=True)
+    async def update_order(self, interaction: discord.Interaction, order_id: str, status: str, notes: str = None):
+        if not is_staff(interaction.user):
+            await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
             return
         
         status_map = {
@@ -161,18 +171,16 @@ class OrdersCog(commands.Cog):
             "refunded": OrderStatus.REFUNDED
         }
         
-        if status.lower() not in status_map:
-            await ctx.send(f"Invalid status. Options: {', '.join(status_map.keys())}", delete_after=5)
-            return
+        await interaction.response.defer()
         
         order = await db_service.update_order_status(
             order_id, 
             status_map[status.lower()],
-            staff_id=ctx.author.id
+            staff_id=interaction.user.id
         )
         
         if not order:
-            await ctx.send("Order not found.", delete_after=5)
+            await interaction.followup.send("Order not found.", ephemeral=True)
             return
         
         embed = create_embed(
@@ -182,12 +190,12 @@ class OrdersCog(commands.Cog):
         )
         
         embed.add_field(name="New Status", value=f"{get_status_emoji(status.lower())} {status.title()}", inline=True)
-        embed.add_field(name="Updated By", value=ctx.author.mention, inline=True)
+        embed.add_field(name="Updated By", value=interaction.user.mention, inline=True)
         
         if notes:
             embed.add_field(name="Notes", value=notes, inline=False)
         
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
         
         try:
             user = self.bot.get_user(order.user.discord_id)
@@ -203,28 +211,27 @@ class OrdersCog(commands.Cog):
         except:
             pass
     
-    @commands.command(name="completeorder")
-    async def complete_order(self, ctx: commands.Context, order_id: str):
-        try:
-            await ctx.message.delete()
-        except:
-            pass
-        
-        if not is_staff(ctx.author):
-            await ctx.send("You don't have permission to use this command.", delete_after=5)
+    @app_commands.command(name="completeorder", description="Mark an order as complete/delivered (Staff only)")
+    @app_commands.describe(order_id="The order ID to complete")
+    @app_commands.default_permissions(manage_messages=True)
+    async def complete_order(self, interaction: discord.Interaction, order_id: str):
+        if not is_staff(interaction.user):
+            await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
             return
+        
+        await interaction.response.defer()
         
         order = await db_service.update_order_status(
             order_id, 
             OrderStatus.DELIVERED,
-            staff_id=ctx.author.id
+            staff_id=interaction.user.id
         )
         
         if not order:
-            await ctx.send("Order not found.", delete_after=5)
+            await interaction.followup.send("Order not found.", ephemeral=True)
             return
         
-        settings = await db_service.get_or_create_guild_settings(ctx.guild.id)
+        settings = await db_service.get_or_create_guild_settings(interaction.guild.id)
         
         embed = create_embed(
             title="Order Completed",
@@ -246,7 +253,7 @@ class OrdersCog(commands.Cog):
             if order_channel:
                 await order_channel.send(embed=embed)
         
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
         
         try:
             user = self.bot.get_user(order.user.discord_id)
@@ -255,26 +262,28 @@ class OrdersCog(commands.Cog):
         except:
             pass
     
-    @commands.command(name="settracking")
-    async def set_tracking(self, ctx: commands.Context, order_id: str, tracking_number: str):
-        try:
-            await ctx.message.delete()
-        except:
-            pass
-        
-        if not is_staff(ctx.author):
-            await ctx.send("You don't have permission to use this command.", delete_after=5)
+    @app_commands.command(name="settracking", description="Add tracking number to an order (Staff only)")
+    @app_commands.describe(
+        order_id="The order ID",
+        tracking_number="The tracking number"
+    )
+    @app_commands.default_permissions(manage_messages=True)
+    async def set_tracking(self, interaction: discord.Interaction, order_id: str, tracking_number: str):
+        if not is_staff(interaction.user):
+            await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
             return
+        
+        await interaction.response.defer()
         
         order = await db_service.update_order_status(
             order_id,
             OrderStatus.SHIPPED,
             tracking_number=tracking_number,
-            staff_id=ctx.author.id
+            staff_id=interaction.user.id
         )
         
         if not order:
-            await ctx.send("Order not found.", delete_after=5)
+            await interaction.followup.send("Order not found.", ephemeral=True)
             return
         
         embed = create_embed(
@@ -286,7 +295,7 @@ class OrdersCog(commands.Cog):
         embed.add_field(name="Tracking Number", value=tracking_number, inline=False)
         embed.add_field(name="Status", value=f"{get_status_emoji('shipped')} Shipped", inline=True)
         
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
         
         try:
             user = self.bot.get_user(order.user.discord_id)

@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 from datetime import datetime
 import pytz
 
@@ -32,39 +33,37 @@ class TicketsCog(commands.Cog):
         await db_service.update_guild_settings(guild.id, ticket_category_id=category.id)
         return category
     
-    @commands.command(name="newticket")
-    async def new_ticket(self, ctx: commands.Context, *, subject: str = "General Support"):
-        try:
-            await ctx.message.delete()
-        except:
-            pass
+    @app_commands.command(name="newticket", description="Create a new support ticket")
+    @app_commands.describe(subject="The subject/reason for your ticket")
+    async def new_ticket(self, interaction: discord.Interaction, subject: str = "General Support"):
+        await interaction.response.defer(ephemeral=True)
         
         user = await db_service.get_or_create_user(
-            ctx.author.id, ctx.guild.id, str(ctx.author), ctx.author.display_name
+            interaction.user.id, interaction.guild.id, str(interaction.user), interaction.user.display_name
         )
         lang = user.language
         
-        category = await self.get_ticket_category(ctx.guild)
+        category = await self.get_ticket_category(interaction.guild)
         
         overwrites = {
-            ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            ctx.author: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            ctx.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_channels=True)
+            interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            interaction.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_channels=True)
         }
         
-        for role in ctx.guild.roles:
+        for role in interaction.guild.roles:
             if role.name in ["Staff", "Moderator", "Admin", "Support"]:
                 overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         
-        channel = await ctx.guild.create_text_channel(
-            name=f"ticket-{ctx.author.name}",
+        channel = await interaction.guild.create_text_channel(
+            name=f"ticket-{interaction.user.name}",
             category=category,
             overwrites=overwrites,
-            reason=f"Ticket created by {ctx.author}"
+            reason=f"Ticket created by {interaction.user}"
         )
         
         ticket = await db_service.create_ticket(
-            guild_id=ctx.guild.id,
+            guild_id=interaction.guild.id,
             user_id=user.id,
             channel_id=channel.id,
             subject=subject,
@@ -73,7 +72,7 @@ class TicketsCog(commands.Cog):
         
         embed = create_embed(
             title=f"{get_status_emoji('open')} {get_text('ticket_created', lang)}",
-            description=f"Thank you for creating a ticket, {ctx.author.mention}!",
+            description=f"Thank you for creating a ticket, {interaction.user.mention}!",
             color=Config.EMBED_COLOR
         )
         
@@ -83,158 +82,154 @@ class TicketsCog(commands.Cog):
         embed.add_field(name="Created At", value=format_timestamp(get_eastern_time()), inline=False)
         embed.set_footer(text=f"BM Creations Support | Ticket: {ticket.ticket_id}")
         
-        await channel.send(ctx.author.mention, embed=embed)
+        await channel.send(interaction.user.mention, embed=embed)
         
         support_cog = self.bot.get_cog("SupportInteractionCog")
         if support_cog:
-            await support_cog.send_ticket_welcome(channel, ctx.author)
+            await support_cog.send_ticket_welcome(channel, interaction.user)
         
-        confirm = await ctx.send(f"Ticket created! Please check {channel.mention}")
-        await confirm.delete(delay=5)
+        await interaction.followup.send(f"Ticket created! Please check {channel.mention}", ephemeral=True)
     
-    @commands.command(name="closeticket")
-    async def close_ticket(self, ctx: commands.Context, *, reason: str = "Resolved"):
-        ticket = await db_service.get_ticket(channel_id=ctx.channel.id)
+    @app_commands.command(name="closeticket", description="Close the current ticket")
+    @app_commands.describe(reason="Reason for closing the ticket")
+    async def close_ticket(self, interaction: discord.Interaction, reason: str = "Resolved"):
+        ticket = await db_service.get_ticket(channel_id=interaction.channel.id)
         
         if not ticket:
-            await ctx.send("This is not a ticket channel.", delete_after=5)
+            await interaction.response.send_message("This is not a ticket channel.", ephemeral=True)
             return
         
-        if ticket.user.discord_id != ctx.author.id and not is_staff(ctx.author):
-            await ctx.send("You don't have permission to close this ticket.", delete_after=5)
+        if ticket.user.discord_id != interaction.user.id and not is_staff(interaction.user):
+            await interaction.response.send_message("You don't have permission to close this ticket.", ephemeral=True)
             return
+        
+        await interaction.response.defer()
         
         await db_service.update_ticket_status(ticket.ticket_id, TicketStatus.CLOSED)
         
         embed = create_embed(
             title=f"{get_status_emoji('closed')} Ticket Closed",
-            description=f"This ticket has been closed by {ctx.author.mention}",
+            description=f"This ticket has been closed by {interaction.user.mention}",
             color=Config.WARNING_COLOR
         )
         embed.add_field(name="Ticket ID", value=ticket.ticket_id, inline=True)
         embed.add_field(name="Reason", value=reason, inline=True)
         embed.add_field(name="Closed At", value=format_timestamp(get_eastern_time()), inline=False)
         
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
         
-        await ctx.send("This channel will be deleted in 10 seconds...")
+        await interaction.channel.send("This channel will be deleted in 10 seconds...")
         await discord.utils.sleep_until(datetime.utcnow().replace(second=datetime.utcnow().second + 10))
-        await ctx.channel.delete(reason=f"Ticket closed: {reason}")
+        await interaction.channel.delete(reason=f"Ticket closed: {reason}")
     
-    @commands.command(name="viewtickets")
-    async def view_tickets(self, ctx: commands.Context):
-        try:
-            await ctx.message.delete()
-        except:
-            pass
-        
-        if not is_staff(ctx.author):
-            await ctx.send("You don't have permission to use this command.", delete_after=5)
+    @app_commands.command(name="viewtickets", description="View all open tickets (Staff only)")
+    @app_commands.default_permissions(manage_messages=True)
+    async def view_tickets(self, interaction: discord.Interaction):
+        if not is_staff(interaction.user):
+            await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
             return
         
-        tickets = await db_service.get_active_tickets(ctx.guild.id)
+        tickets = await db_service.get_guild_tickets(interaction.guild.id, status=TicketStatus.OPEN)
         
         if not tickets:
-            await ctx.send("No active tickets at the moment.", delete_after=5)
+            await interaction.response.send_message("No open tickets found.", ephemeral=True)
             return
         
         embed = create_embed(
-            title="Active Tickets",
-            description=f"Currently tracking **{len(tickets)}** active ticket(s)",
-            color=Config.WARNING_COLOR
+            title=f"Open Tickets ({len(tickets)} total)",
+            description="Here are all open tickets:",
+            color=Config.EMBED_COLOR
         )
         
-        for ticket in tickets[:25]:
-            status_emoji = get_status_emoji(ticket.status.value)
-            ticket_info = f"**Customer:** <@{ticket.user.discord_id}>\n"
-            ticket_info += f"**Subject:** {ticket.subject or 'General'}\n"
-            ticket_info += f"**Status:** {status_emoji} {ticket.status.value.title()}\n"
-            ticket_info += f"**Channel:** <#{ticket.channel_id}>\n"
-            ticket_info += f"**Created:** {format_timestamp(ticket.created_at)}"
+        for ticket in tickets[:10]:
+            channel = interaction.guild.get_channel(ticket.channel_id)
+            channel_mention = channel.mention if channel else "Deleted Channel"
+            
+            ticket_info = f"**User:** <@{ticket.user.discord_id}>\n"
+            ticket_info += f"**Subject:** {ticket.subject}\n"
+            ticket_info += f"**Channel:** {channel_mention}\n"
+            ticket_info += f"**Created:** {format_timestamp(ticket.created_at, '%m/%d %H:%M')}"
             
             embed.add_field(name=f"Ticket: {ticket.ticket_id}", value=ticket_info, inline=False)
         
-        embed.set_footer(text="Use !closeticket to close a ticket")
-        await ctx.send(embed=embed)
+        if len(tickets) > 10:
+            embed.set_footer(text=f"Showing 10 of {len(tickets)} tickets")
+        
+        await interaction.response.send_message(embed=embed)
     
-    @commands.command(name="claimticket")
-    async def claim_ticket(self, ctx: commands.Context):
-        if not is_staff(ctx.author):
-            await ctx.send("You don't have permission to use this command.", delete_after=5)
+    @app_commands.command(name="claimticket", description="Claim a ticket to handle it (Staff only)")
+    @app_commands.default_permissions(manage_messages=True)
+    async def claim_ticket(self, interaction: discord.Interaction):
+        if not is_staff(interaction.user):
+            await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
             return
         
-        ticket = await db_service.get_ticket(channel_id=ctx.channel.id)
+        ticket = await db_service.get_ticket(channel_id=interaction.channel.id)
         
         if not ticket:
-            await ctx.send("This is not a ticket channel.", delete_after=5)
+            await interaction.response.send_message("This is not a ticket channel.", ephemeral=True)
             return
         
-        await db_service.update_ticket_status(
-            ticket.ticket_id, 
-            TicketStatus.IN_PROGRESS, 
-            assigned_staff_id=ctx.author.id
-        )
+        await db_service.update_ticket_status(ticket.ticket_id, TicketStatus.IN_PROGRESS)
         
         embed = create_embed(
             title="Ticket Claimed",
-            description=f"{ctx.author.mention} has claimed this ticket and will assist you.",
+            description=f"{interaction.user.mention} is now handling this ticket.",
             color=Config.SUCCESS_COLOR
         )
+        embed.add_field(name="Staff Member", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Claimed At", value=format_timestamp(get_eastern_time()), inline=True)
         
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
     
-    @commands.command(name="transferticket")
-    async def transfer_ticket(self, ctx: commands.Context, staff_member: discord.Member):
-        if not is_staff(ctx.author):
-            await ctx.send("You don't have permission to use this command.", delete_after=5)
+    @app_commands.command(name="transferticket", description="Transfer a ticket to another staff member")
+    @app_commands.describe(member="The staff member to transfer the ticket to")
+    @app_commands.default_permissions(manage_messages=True)
+    async def transfer_ticket(self, interaction: discord.Interaction, member: discord.Member):
+        if not is_staff(interaction.user):
+            await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
             return
         
-        if not is_staff(staff_member):
-            await ctx.send("You can only transfer to staff members.", delete_after=5)
-            return
-        
-        ticket = await db_service.get_ticket(channel_id=ctx.channel.id)
+        ticket = await db_service.get_ticket(channel_id=interaction.channel.id)
         
         if not ticket:
-            await ctx.send("This is not a ticket channel.", delete_after=5)
+            await interaction.response.send_message("This is not a ticket channel.", ephemeral=True)
             return
         
-        await db_service.update_ticket_status(
-            ticket.ticket_id, 
-            TicketStatus.IN_PROGRESS, 
-            assigned_staff_id=staff_member.id
-        )
+        await interaction.channel.set_permissions(member, read_messages=True, send_messages=True)
         
         embed = create_embed(
             title="Ticket Transferred",
-            description=f"This ticket has been transferred to {staff_member.mention}",
+            description=f"This ticket has been transferred to {member.mention}",
             color=Config.EMBED_COLOR
         )
+        embed.add_field(name="From", value=interaction.user.mention, inline=True)
+        embed.add_field(name="To", value=member.mention, inline=True)
         
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
     
-    @commands.command(name="ticketinfo")
-    async def ticket_info(self, ctx: commands.Context):
-        ticket = await db_service.get_ticket(channel_id=ctx.channel.id)
+    @app_commands.command(name="addtoticket", description="Add a user to the current ticket")
+    @app_commands.describe(member="The user to add to this ticket")
+    async def add_to_ticket(self, interaction: discord.Interaction, member: discord.Member):
+        ticket = await db_service.get_ticket(channel_id=interaction.channel.id)
         
         if not ticket:
-            await ctx.send("This is not a ticket channel.", delete_after=5)
+            await interaction.response.send_message("This is not a ticket channel.", ephemeral=True)
             return
         
+        if ticket.user.discord_id != interaction.user.id and not is_staff(interaction.user):
+            await interaction.response.send_message("You don't have permission to add users to this ticket.", ephemeral=True)
+            return
+        
+        await interaction.channel.set_permissions(member, read_messages=True, send_messages=True)
+        
         embed = create_embed(
-            title=f"Ticket Information: {ticket.ticket_id}",
-            color=Config.EMBED_COLOR
+            title="User Added to Ticket",
+            description=f"{member.mention} has been added to this ticket by {interaction.user.mention}",
+            color=Config.SUCCESS_COLOR
         )
         
-        embed.add_field(name="Customer", value=f"<@{ticket.user.discord_id}>", inline=True)
-        embed.add_field(name="Subject", value=ticket.subject or "General", inline=True)
-        embed.add_field(name="Status", value=f"{get_status_emoji(ticket.status.value)} {ticket.status.value.title()}", inline=True)
-        embed.add_field(name="Created At", value=format_timestamp(ticket.created_at), inline=True)
-        
-        if ticket.assigned_staff_id:
-            embed.add_field(name="Assigned To", value=f"<@{ticket.assigned_staff_id}>", inline=True)
-        
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TicketsCog(bot))
