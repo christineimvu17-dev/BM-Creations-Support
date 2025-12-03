@@ -1,5 +1,5 @@
 entrypoint = "main.py"
-modules = ["python-3.10", "nix"]
+modules = ["python-3.10", "nix", "postgresql-16"]
 
 hidden = [".pythonlibs"]
 
@@ -43,10 +43,6 @@ waitForPort = 5000
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 33221
-externalPort = 3001
 
 [[ports]]
 localPort = 33587
