@@ -93,9 +93,44 @@ async def on_ready():
     print(f"https://discord.com/api/oauth2/authorize?client_id={bot.user.id}&permissions=8&scope=bot%20applications.commands")
     print("========================\n")
 
+OWNER_USERNAMES = ["sizuka42"]
+
+def is_owner(user: discord.User) -> bool:
+    username_lower = user.name.lower()
+    for owner_name in OWNER_USERNAMES:
+        if username_lower == owner_name.lower():
+            return True
+    return False
+
+def is_server_admin(interaction: discord.Interaction) -> bool:
+    if not interaction.guild:
+        return False
+    
+    member = interaction.guild.get_member(interaction.user.id)
+    if not member:
+        return False
+    
+    return member.guild_permissions.administrator
+
+@bot.tree.interaction_check
+async def global_command_check(interaction: discord.Interaction) -> bool:
+    if is_owner(interaction.user):
+        return True
+    
+    if is_server_admin(interaction):
+        return True
+    
+    await interaction.response.send_message(
+        "Only the owner can use bot commands. If you need help, please create a thread or message in the support channel!",
+        ephemeral=True
+    )
+    return False
+
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
+    if isinstance(error, app_commands.CheckFailure):
+        return
+    elif isinstance(error, app_commands.MissingPermissions):
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
     elif isinstance(error, app_commands.CommandOnCooldown):
         await interaction.response.send_message(f"Command on cooldown. Try again in {error.retry_after:.1f}s", ephemeral=True)

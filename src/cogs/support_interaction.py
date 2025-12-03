@@ -13,6 +13,13 @@ from src.config import Config
 suppressed_channels: Set[int] = set()
 processed_threads: Set[int] = set()
 
+IGNORED_CATEGORIES = ["chat zone", "more fun", "chatzone", "morefun"]
+PURCHASE_KEYWORDS = [
+    "buy", "purchase", "want to buy", "wanna buy", "buying", "i want",
+    "how much", "price", "cost", "order", "get this", "interested",
+    "can i get", "looking for", "need", "want this", "trigger", "room", "pose"
+]
+
 class ProductCategorySelect(ui.View):
     def __init__(self, user_id: int, channel_id: int, timeout: float = 300):
         super().__init__(timeout=timeout)
@@ -183,8 +190,20 @@ class SupportInteractionCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.product_await_users: Dict[int, Dict] = {}
+        self.owner_username = "sizuka42"
+    
+    def is_owner(self, member: discord.Member) -> bool:
+        username_lower = member.name.lower()
+        display_lower = member.display_name.lower() if member.display_name else ""
+        return (self.owner_username in username_lower or 
+                self.owner_username in display_lower or
+                "sizuka" in username_lower or
+                "sizuka" in display_lower)
     
     def is_founder_or_admin(self, member: discord.Member, settings) -> bool:
+        if self.is_owner(member):
+            return True
+            
         founder_roles = settings.founder_role_ids or []
         admin_roles = settings.admin_role_ids or []
         
@@ -195,6 +214,21 @@ class SupportInteractionCog(commands.Cog):
                 return True
         
         return member.guild_permissions.administrator
+    
+    def is_in_ignored_category(self, channel: discord.TextChannel) -> bool:
+        if hasattr(channel, 'category') and channel.category:
+            category_name = channel.category.name.lower()
+            for ignored in IGNORED_CATEGORIES:
+                if ignored in category_name:
+                    return True
+        return False
+    
+    def has_purchase_intent(self, message: str) -> bool:
+        message_lower = message.lower()
+        for keyword in PURCHASE_KEYWORDS:
+            if keyword in message_lower:
+                return True
+        return False
     
     async def search_product_by_name(self, guild_id: int, product_name: str):
         products = await db_service.search_products(guild_id, product_name)
@@ -218,32 +252,31 @@ class SupportInteractionCog(commands.Cog):
             return faqs[0].answer
         
         keywords = {
-            "price": "Our prices vary by product! Would you like to browse our catalog? Click the **Buy Product** button or ask about a specific item.",
-            "cost": "Our prices vary by product! Would you like to browse our catalog? Click the **Buy Product** button or ask about a specific item.",
-            "how much": "Our prices vary by product! Would you like to browse our catalog? Click the **Buy Product** button or ask about a specific item.",
-            "payment": "We accept PayPal payments! Once you select a product, I'll provide you with our PayPal link for secure payment.",
-            "paypal": "We accept PayPal payments! Once you select a product, I'll provide you with our PayPal link for secure payment.",
-            "pay": "We accept PayPal payments! Once you select a product, I'll provide you with our PayPal link for secure payment.",
+            "price": "Our prices vary by product! What product are you interested in? I can check the price for you.",
+            "cost": "Our prices vary by product! What product are you interested in? I can check the price for you.",
+            "how much": "Our prices vary by product! Tell me which product you're looking at and I'll get the price for you.",
+            "payment": "We accept PayPal payments! Once you tell me which product you want, I'll provide the PayPal link.",
+            "paypal": "We accept PayPal payments! Just let me know which product you'd like to purchase.",
+            "pay": "We accept PayPal payments! Which product are you interested in?",
             "delivery": "After payment confirmation, your product will be delivered to your IMVU account within 24 hours. Most orders are completed within a few hours!",
-            "how long": "After payment confirmation, your product will be delivered to your IMVU account within 24 hours. Most orders are completed within a few hours!",
-            "when": "After payment confirmation, your product will be delivered to your IMVU account within 24 hours. Most orders are completed within a few hours!",
+            "how long": "Delivery is usually within a few hours, maximum 24 hours after payment confirmation!",
+            "when": "Your product will be delivered to your IMVU account after payment is confirmed. Usually within a few hours!",
             "refund": "For refund requests, please provide your order details and a staff member will review your case.",
-            "cancel": "To cancel an order, please let us know immediately before delivery. If already delivered, we'll need to review the situation.",
-            "help": "I'm here to help! You can ask me about products, prices, delivery, or any other questions. What would you like to know?",
-            "hi": "Hello! Welcome to BM Creations! How can I assist you today? Feel free to ask me anything!",
-            "hello": "Hello! Welcome to BM Creations! How can I assist you today? Feel free to ask me anything!",
-            "hey": "Hey there! Welcome to BM Creations! How can I help you today?",
+            "cancel": "To cancel an order, please let us know immediately before delivery.",
+            "help": "I'm here to help! What would you like to know about our products or services?",
+            "hi": "Hello! Welcome to BM Creations! How can I help you today?",
+            "hello": "Hello! Welcome to BM Creations! What can I do for you?",
+            "hey": "Hey there! Welcome to BM Creations! How can I help?",
             "thanks": "You're welcome! Is there anything else I can help you with?",
-            "thank you": "You're welcome! Is there anything else I can help you with?",
-            "trigger": "We have a great selection of triggers! Would you like to browse our trigger collection? Just click **Buy Product** and select Triggers!",
-            "room": "We have amazing room designs! Would you like to see our room collection? Click **Buy Product** and select Rooms!",
-            "pose": "We have beautiful pose packs! Would you like to browse our poses? Click **Buy Product** and select Poses!",
-            "custom": "Yes, we offer custom work! Please describe what you'd like customized and a staff member will provide a quote.",
-            "order": "To check your order status, please provide your order ID or describe your purchase, and I'll help you track it!",
-            "status": "To check your order status, please provide your order ID or describe your purchase, and I'll help you track it!",
-            "buy": "Great! To make a purchase, please click the **Buy Product** button above and select a category!",
-            "purchase": "Great! To make a purchase, please click the **Buy Product** button above and select a category!",
-            "want": "I'd be happy to help! What product are you interested in? You can click **Buy Product** to browse categories!",
+            "thank you": "You're welcome! Let me know if you need anything else!",
+            "trigger": "We have great triggers! Which trigger are you interested in? Tell me the name and I'll get the details.",
+            "room": "We have amazing rooms! Which room are you looking for? I can check the price and details.",
+            "pose": "We have beautiful poses! Which pose pack interests you?",
+            "custom": "Yes, we offer custom work! Please describe what you'd like and staff will provide a quote.",
+            "buy": "Great! What would you like to buy? Tell me the product name and I'll help you with the purchase!",
+            "purchase": "Awesome! Which product would you like to purchase? I'll help you with the process!",
+            "want": "What product are you interested in? Tell me and I'll get you the details!",
+            "interested": "Great! Which product caught your eye? I can provide more information!",
         }
         
         for keyword, response in keywords.items():
@@ -254,9 +287,31 @@ class SupportInteractionCog(commands.Cog):
         if products:
             product = products[0]
             price_text = f"${product.price:.2f}" if product.price else "Contact for price"
-            return f"I found **{product.name}**! {product.description or ''}\n\nPrice: {price_text}\n\nWould you like to purchase this? Click the **Buy Product** button above!"
+            return f"I found **{product.name}**!\n\n{product.description or 'A great product from BM Creations!'}\n\n**Price:** {price_text}\n\nWould you like to purchase this? Just confirm and I'll guide you through the payment!"
         
         return None
+    
+    async def create_ticket_for_user(self, channel, user: discord.Member, subject: str = "Product Inquiry"):
+        try:
+            db_user = await db_service.get_or_create_user(
+                discord_id=user.id,
+                guild_id=channel.guild.id,
+                username=str(user),
+                display_name=user.display_name
+            )
+            
+            ticket = await db_service.create_ticket(
+                user_id=db_user.id,
+                guild_id=channel.guild.id,
+                channel_id=channel.id,
+                subject=subject,
+                extra_data={"auto_created": True, "channel_name": channel.name}
+            )
+            
+            return ticket
+        except Exception as e:
+            print(f"Error creating ticket: {e}")
+            return None
     
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):
@@ -264,6 +319,9 @@ class SupportInteractionCog(commands.Cog):
             return
         
         processed_threads.add(thread.id)
+        
+        if self.is_in_ignored_category(thread.parent):
+            return
         
         await asyncio.sleep(1)
         
@@ -302,13 +360,13 @@ class SupportInteractionCog(commands.Cog):
             
             embed = create_embed(
                 title="👋 Welcome to BM Creations Support!",
-                description=f"Hello {owner.mention}! Thank you for reaching out.\n\n**A staff member will be with you shortly!**\n\nIn the meantime, I'm here to help you. Please select an option below or just type your question and I'll do my best to assist!\n\n💬 **Just type your message** - I'll answer your questions automatically!",
+                description=f"Hello {owner.mention}!\n\n**Staff is coming to you shortly!**\n\nUntil then, I'm here to help you. Just type your question and I'll answer!\n\nOr select an option below:",
                 color=Config.EMBED_COLOR
             )
             
-            embed.add_field(name="🛒 Buy Product", value="Browse and purchase our amazing products", inline=True)
+            embed.add_field(name="🛒 Buy Product", value="Browse and purchase products", inline=True)
             embed.add_field(name="❓ Any Queries", value="Ask questions or get support", inline=True)
-            embed.set_footer(text="BM Creations Support | Staff is on their way!")
+            embed.set_footer(text="BM Creations Support | Staff will be with you soon!")
             
             view = TicketWelcomeView(owner.id, self.bot, thread.id)
             await thread.send(embed=embed, view=view)
@@ -327,6 +385,9 @@ class SupportInteractionCog(commands.Cog):
         
         settings = await db_service.get_or_create_guild_settings(message.guild.id)
         
+        if self.is_in_ignored_category(message.channel):
+            return
+        
         if message.channel.id in suppressed_channels:
             return
         
@@ -342,99 +403,158 @@ class SupportInteractionCog(commands.Cog):
         
         ticket = await db_service.get_ticket(channel_id=message.channel.id)
         if ticket:
-            extra = ticket.extra_data or {}
-            
-            if extra.get("awaiting_product_name"):
-                product_name = message.content.strip()
-                product = await self.search_product_by_name(message.guild.id, product_name)
-                
-                if product:
-                    await self.send_product_details(message.channel, product, message.author, settings)
-                    extra["awaiting_product_name"] = False
-                    extra["selected_product"] = product.name
-                else:
-                    similar = await db_service.search_products(message.guild.id, product_name)
-                    
-                    embed = create_embed(
-                        title="🔍 Product Not Found",
-                        description=f"I couldn't find an exact match for **{product_name}**.",
-                        color=Config.WARNING_COLOR
-                    )
-                    
-                    if similar:
-                        suggestions = "\n".join([f"• {p.name}" for p in similar[:5]])
-                        embed.add_field(
-                            name="Did you mean one of these?",
-                            value=suggestions,
-                            inline=False
-                        )
-                        embed.set_footer(text="Please type the exact product name from the list above.")
-                    else:
-                        embed.add_field(
-                            name="What to do?",
-                            value="Please try a different name or wait for a staff member to help you find the right product.",
-                            inline=False
-                        )
-                    
-                    await message.channel.send(embed=embed)
-                    return
-                
-                await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
-                return
-            
-            if extra.get("awaiting_query") or extra.get("thread_ticket"):
-                response = await self.generate_smart_response(message.content, message.guild.id)
-                
-                if response:
-                    embed = create_embed(
-                        title="💡 Here's what I found",
-                        description=response,
-                        color=Config.EMBED_COLOR
-                    )
-                    embed.set_footer(text="Need more help? A staff member will assist you shortly!")
-                    await message.channel.send(embed=embed)
-                else:
-                    embed = create_embed(
-                        title="📝 Got it!",
-                        description="I've noted your question. A staff member will respond to you shortly!\n\nFeel free to provide more details or ask another question while you wait.",
-                        color=Config.EMBED_COLOR
-                    )
-                    await message.channel.send(embed=embed)
-                return
-            
-            if extra.get("awaiting_payment_proof"):
-                if message.attachments:
-                    embed = create_embed(
-                        title="✅ Screenshot Received!",
-                        description=f"Thank you for uploading your payment proof for **{extra.get('product_purchased', 'your product')}**!\n\nA staff member will verify your payment and process your order shortly.\n\n**What happens next:**\n1. Staff verifies payment\n2. Product is prepared\n3. Delivery to your IMVU account\n4. You receive confirmation",
-                        color=Config.SUCCESS_COLOR
-                    )
-                    embed.set_footer(text="Please wait for staff confirmation.")
-                    await message.channel.send(embed=embed)
-                    
-                    extra["payment_proof_received"] = True
-                    await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
-                else:
-                    if message.content.strip():
-                        embed = create_embed(
-                            title="📝 Info Received",
-                            description="Thanks for the information! Please also upload a screenshot of your payment confirmation.",
-                            color=Config.EMBED_COLOR
-                        )
-                        await message.channel.send(embed=embed)
-                return
+            await self.handle_ticket_message(message, ticket, settings)
+            return
         
-        if settings.support_channel_id and message.channel.id == settings.support_channel_id:
+        is_support_desk = (settings.support_channel_id and 
+                          message.channel.id == settings.support_channel_id)
+        
+        is_products_channel = (settings.products_channel_id and 
+                              message.channel.id == settings.products_channel_id)
+        
+        is_general_chat = (settings.general_chat_id and 
+                          message.channel.id == settings.general_chat_id)
+        
+        channel_name = message.channel.name.lower()
+        is_support_by_name = any(x in channel_name for x in ["support", "help", "desk"])
+        is_products_by_name = any(x in channel_name for x in ["product", "catalog", "shop", "store"])
+        is_general_by_name = "general" in channel_name
+        
+        if is_support_desk or is_support_by_name:
+            await self.handle_support_desk_message(message, settings)
+            return
+        
+        if is_products_channel or is_products_by_name:
+            await self.handle_products_channel_message(message, settings)
+            return
+        
+        if is_general_chat or is_general_by_name:
+            if self.has_purchase_intent(message.content):
+                await self.handle_purchase_intent_message(message, settings)
+            return
+    
+    async def handle_ticket_message(self, message: discord.Message, ticket, settings):
+        extra = ticket.extra_data or {}
+        
+        if extra.get("awaiting_product_name"):
+            product_name = message.content.strip()
+            product = await self.search_product_by_name(message.guild.id, product_name)
+            
+            if product:
+                await self.send_product_details(message.channel, product, message.author, settings)
+                extra["awaiting_product_name"] = False
+                extra["selected_product"] = product.name
+            else:
+                similar = await db_service.search_products(message.guild.id, product_name)
+                
+                embed = create_embed(
+                    title="🔍 Product Not Found",
+                    description=f"I couldn't find **{product_name}**.",
+                    color=Config.WARNING_COLOR
+                )
+                
+                if similar:
+                    suggestions = "\n".join([f"• {p.name}" for p in similar[:5]])
+                    embed.add_field(name="Did you mean?", value=suggestions, inline=False)
+                else:
+                    embed.add_field(name="What to do?", value="Please try a different name or wait for staff to help!", inline=False)
+                
+                await message.channel.send(embed=embed)
+                return
+            
+            await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+            return
+        
+        if extra.get("awaiting_query") or extra.get("thread_ticket") or extra.get("auto_created"):
             response = await self.generate_smart_response(message.content, message.guild.id)
             
             if response:
                 embed = create_embed(
-                    title="💬 Support Response",
+                    title="💡 Here's what I found",
                     description=response,
                     color=Config.EMBED_COLOR
                 )
-                embed.set_footer(text="For personalized assistance, create a thread!")
+                embed.set_footer(text="Staff will be with you shortly!")
+                await message.channel.send(embed=embed)
+            else:
+                embed = create_embed(
+                    title="📝 Got it!",
+                    description="I've noted your message. A staff member will respond shortly!\n\nFeel free to add more details.",
+                    color=Config.EMBED_COLOR
+                )
+                await message.channel.send(embed=embed)
+            return
+        
+        if extra.get("awaiting_payment_proof"):
+            if message.attachments:
+                embed = create_embed(
+                    title="✅ Screenshot Received!",
+                    description=f"Thank you! Staff will verify your payment and process your order.\n\n**Product:** {extra.get('product_purchased', 'Your order')}",
+                    color=Config.SUCCESS_COLOR
+                )
+                await message.channel.send(embed=embed)
+                
+                extra["payment_proof_received"] = True
+                await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+            else:
+                embed = create_embed(
+                    title="📝 Info Received",
+                    description="Thanks! Please also upload a screenshot of your payment.",
+                    color=Config.EMBED_COLOR
+                )
+                await message.channel.send(embed=embed)
+            return
+    
+    async def handle_support_desk_message(self, message: discord.Message, settings):
+        response = await self.generate_smart_response(message.content, message.guild.id)
+        
+        if response:
+            embed = create_embed(
+                title="💬 Support Response",
+                description=response,
+                color=Config.EMBED_COLOR
+            )
+            embed.set_footer(text="Need more help? Create a thread for personalized support!")
+            await message.reply(embed=embed, mention_author=False)
+        else:
+            embed = create_embed(
+                title="📝 Message Received",
+                description="Thanks for your message! A staff member will help you soon.\n\n**Tip:** Create a thread for faster, personalized support!",
+                color=Config.EMBED_COLOR
+            )
+            await message.reply(embed=embed, mention_author=False)
+    
+    async def handle_products_channel_message(self, message: discord.Message, settings):
+        ticket = await self.create_ticket_for_user(message.channel, message.author, "Product Inquiry")
+        
+        if ticket:
+            embed = create_embed(
+                title="👋 Hi there!",
+                description=f"Hello {message.author.mention}! I see you're interested in our products.\n\n**Staff is coming to help you shortly!**\n\nUntil then, tell me what you're looking for and I'll try to help!",
+                color=Config.EMBED_COLOR
+            )
+            view = TicketWelcomeView(message.author.id, self.bot, message.channel.id)
+            await message.reply(embed=embed, view=view, mention_author=False)
+        else:
+            response = await self.generate_smart_response(message.content, message.guild.id)
+            if response:
+                embed = create_embed(
+                    title="💬 Product Info",
+                    description=response,
+                    color=Config.EMBED_COLOR
+                )
                 await message.reply(embed=embed, mention_author=False)
+    
+    async def handle_purchase_intent_message(self, message: discord.Message, settings):
+        response = await self.generate_smart_response(message.content, message.guild.id)
+        
+        if response:
+            embed = create_embed(
+                title="🛒 Interested in buying?",
+                description=response + "\n\n**Tip:** Create a thread for faster, personalized purchase assistance!",
+                color=Config.EMBED_COLOR
+            )
+            await message.reply(embed=embed, mention_author=False)
     
     async def send_product_details(self, channel, product, user: discord.Member, settings):
         price_text = f"${product.price:.2f}" if product.price else "Contact for price"
@@ -448,13 +568,6 @@ class SupportInteractionCog(commands.Cog):
         
         embed.add_field(name="💰 Price", value=price_text, inline=True)
         embed.add_field(name="📁 Category", value=product.category or "General", inline=True)
-        
-        if product.extra_data and product.extra_data.get("features"):
-            embed.add_field(
-                name="✨ Features",
-                value=product.extra_data["features"],
-                inline=False
-            )
         
         paypal_link = settings.paypal_link or "Contact staff for payment link"
         
@@ -470,27 +583,25 @@ class SupportInteractionCog(commands.Cog):
             inline=False
         )
         
-        embed.set_footer(text="BM Creations | Quality Products")
-        
         view = PaymentConfirmView(user.id, product.name)
         await channel.send(embed=embed, view=view)
     
     async def send_ticket_welcome(self, channel, user: discord.Member):
         embed = create_embed(
             title="👋 Welcome to BM Creations Support!",
-            description=f"Hello {user.mention}! Thank you for reaching out.\n\n**How can I help you today?**\n\nPlease select an option below to get started:",
+            description=f"Hello {user.mention}!\n\n**Staff is coming to you shortly!**\n\nUntil then, I'm here to help. Select an option below or just type your question!",
             color=Config.EMBED_COLOR
         )
         
-        embed.add_field(name="🛒 Buy Product", value="Browse and purchase our amazing products", inline=True)
+        embed.add_field(name="🛒 Buy Product", value="Browse and purchase products", inline=True)
         embed.add_field(name="❓ Any Queries", value="Ask questions or get support", inline=True)
         embed.set_footer(text="BM Creations Support | We're here to help!")
         
         view = TicketWelcomeView(user.id, self.bot, channel.id)
         await channel.send(embed=embed, view=view)
     
-    @app_commands.command(name="setsupportchannel", description="Set the support auto-reply channel (Admin)")
-    @app_commands.describe(channel="The channel for auto-responses")
+    @app_commands.command(name="setsupportchannel", description="Set the support desk channel (Admin)")
+    @app_commands.describe(channel="The channel for support messages")
     @app_commands.default_permissions(administrator=True)
     async def set_support_channel(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
         channel = channel or interaction.channel
@@ -501,8 +612,46 @@ class SupportInteractionCog(commands.Cog):
         )
         
         embed = create_embed(
-            title="✅ Support Channel Set",
-            description=f"Auto-responses will now be active in {channel.mention}!\n\nThe bot will automatically answer questions in this channel.",
+            title="✅ Support Desk Channel Set",
+            description=f"Support desk is now {channel.mention}\n\nBot will automatically reply to ALL messages in this channel!",
+            color=Config.SUCCESS_COLOR
+        )
+        
+        await interaction.response.send_message(embed=embed)
+    
+    @app_commands.command(name="setproductschannel", description="Set the products channel (Admin)")
+    @app_commands.describe(channel="The products channel - creates ticket when users message")
+    @app_commands.default_permissions(administrator=True)
+    async def set_products_channel(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
+        channel = channel or interaction.channel
+        
+        await db_service.update_guild_settings(
+            interaction.guild.id,
+            products_channel_id=channel.id
+        )
+        
+        embed = create_embed(
+            title="✅ Products Channel Set",
+            description=f"Products channel is now {channel.mention}\n\nWhen users message here, bot will create a ticket and help them!",
+            color=Config.SUCCESS_COLOR
+        )
+        
+        await interaction.response.send_message(embed=embed)
+    
+    @app_commands.command(name="setgeneralchat", description="Set the general chat channel (Admin)")
+    @app_commands.describe(channel="General chat - bot only replies to purchase messages")
+    @app_commands.default_permissions(administrator=True)
+    async def set_general_chat(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
+        channel = channel or interaction.channel
+        
+        await db_service.update_guild_settings(
+            interaction.guild.id,
+            general_chat_id=channel.id
+        )
+        
+        embed = create_embed(
+            title="✅ General Chat Set",
+            description=f"General chat is now {channel.mention}\n\nBot will only reply to purchase-related messages here!",
             color=Config.SUCCESS_COLOR
         )
         
@@ -519,7 +668,7 @@ class SupportInteractionCog(commands.Cog):
         
         embed = create_embed(
             title="✅ PayPal Link Updated",
-            description="Your PayPal payment link has been saved and will be shown to customers during checkout.",
+            description="Your PayPal payment link has been saved!",
             color=Config.SUCCESS_COLOR
         )
         
@@ -542,7 +691,7 @@ class SupportInteractionCog(commands.Cog):
         
         embed = create_embed(
             title="✅ Founder Role Added",
-            description=f"{role.mention} has been set as a Founder role.\n\nWhen someone with this role messages in a ticket, the bot will stop auto-responding.",
+            description=f"{role.mention} is now a Founder role.\n\nBot stops auto-responding when Founders message in tickets!",
             color=Config.SUCCESS_COLOR
         )
         
@@ -565,7 +714,7 @@ class SupportInteractionCog(commands.Cog):
         
         embed = create_embed(
             title="✅ Admin Role Added",
-            description=f"{role.mention} has been set as an Admin role.\n\nWhen someone with this role messages in a ticket, the bot will stop auto-responding.",
+            description=f"{role.mention} is now an Admin role.\n\nBot stops auto-responding when Admins message in tickets!",
             color=Config.SUCCESS_COLOR
         )
         
@@ -577,7 +726,7 @@ class SupportInteractionCog(commands.Cog):
         ticket = await db_service.get_ticket(channel_id=interaction.channel.id)
         
         if not ticket:
-            await interaction.response.send_message("This command can only be used in ticket channels or threads.", ephemeral=True)
+            await interaction.response.send_message("This command can only be used in ticket channels.", ephemeral=True)
             return
         
         if interaction.channel.id in suppressed_channels:
@@ -589,7 +738,7 @@ class SupportInteractionCog(commands.Cog):
         
         embed = create_embed(
             title="🤖 Bot Resumed",
-            description="I'm back online in this ticket! I'll continue assisting the customer.",
+            description="I'm back online! I'll continue helping the customer.",
             color=Config.SUCCESS_COLOR
         )
         
@@ -605,23 +754,28 @@ class SupportInteractionCog(commands.Cog):
             color=Config.EMBED_COLOR
         )
         
-        support_channel = f"<#{settings.support_channel_id}>" if settings.support_channel_id else "Not set"
-        embed.add_field(name="Support Channel", value=support_channel, inline=True)
+        support_ch = f"<#{settings.support_channel_id}>" if settings.support_channel_id else "Not set (auto-detects 'support')"
+        products_ch = f"<#{settings.products_channel_id}>" if settings.products_channel_id else "Not set (auto-detects 'product')"
+        general_ch = f"<#{settings.general_chat_id}>" if settings.general_chat_id else "Not set (auto-detects 'general')"
         
-        paypal_status = "✅" if settings.paypal_link else "❌"
-        embed.add_field(name="PayPal Link", value=f"{paypal_status} {'Configured' if settings.paypal_link else 'Not set'}", inline=True)
+        embed.add_field(name="💬 Support Desk", value=support_ch, inline=True)
+        embed.add_field(name="🛍️ Products Channel", value=products_ch, inline=True)
+        embed.add_field(name="💭 General Chat", value=general_ch, inline=True)
+        
+        paypal_status = "✅ Configured" if settings.paypal_link else "❌ Not set"
+        embed.add_field(name="💳 PayPal Link", value=paypal_status, inline=True)
         
         founder_count = len(settings.founder_role_ids or [])
         admin_count = len(settings.admin_role_ids or [])
-        embed.add_field(name="Founder Roles", value=str(founder_count), inline=True)
-        embed.add_field(name="Admin Roles", value=str(admin_count), inline=True)
+        embed.add_field(name="👑 Founder Roles", value=str(founder_count), inline=True)
+        embed.add_field(name="⚡ Admin Roles", value=str(admin_count), inline=True)
         
-        embed.add_field(name="Suppressed Tickets", value=str(len(suppressed_channels)), inline=True)
-        embed.add_field(name="Auto-Thread Tickets", value=str(len(processed_threads)), inline=True)
+        embed.add_field(name="🔇 Suppressed Tickets", value=str(len(suppressed_channels)), inline=True)
+        embed.add_field(name="🧵 Thread Tickets", value=str(len(processed_threads)), inline=True)
         
         embed.add_field(
-            name="🔄 Auto-Thread Feature",
-            value="**Enabled** - When users create threads, they automatically get welcomed with the support buttons!",
+            name="📋 Channel Rules",
+            value="• **Support Desk:** Reply to ALL messages\n• **Products:** Create ticket + welcome\n• **General:** Only purchase messages\n• **Chat Zone/More Fun:** Ignored",
             inline=False
         )
         

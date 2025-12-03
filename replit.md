@@ -15,14 +15,32 @@ Preferred communication style: Simple, everyday language.
 - **December 3, 2025**: Migrated all commands to Discord slash commands (/)
 - **December 3, 2025**: Added automatic thread detection - when anyone creates a thread, bot automatically opens a ticket and welcomes them
 - **December 3, 2025**: Bot now answers questions automatically in threads without needing commands
+- **December 3, 2025**: **OWNER-ONLY COMMANDS** - Only @sizuka42 and server admins can use commands, regular members cannot
+- **December 3, 2025**: **Channel-specific auto-response behavior:**
+  - Support Desk: Bot replies to ALL messages automatically
+  - Products Channel: Creates ticket when users message, welcomes them
+  - General Chat: Only replies to purchase-related messages
+  - Chat Zone / More Fun categories: Bot completely ignores these channels
+
+## Access Control
+
+### Command Permissions
+- **Owner (@sizuka42)**: Full access to all 36 commands
+- **Server Administrators**: Full access to all commands
+- **Regular Members**: CANNOT use any commands - redirected to create threads for support
+
+### Auto-Response Rules
+1. **When Founder/Admin messages in a ticket**: Bot STOPS responding (staff is handling)
+2. **To resume bot**: Use `/resumebot` command
+3. **Ignored Categories**: "Chat Zone" and "More Fun" - bot never responds there
 
 ## Project Structure
 
 ```
 .
-├── main.py                 # Main entry point
+├── main.py                 # Main entry point (includes owner-only command check)
 ├── src/
-│   ├── config.py           # Bot configuration
+│   ├── config.py           # Bot configuration (owner username, keywords, ignored categories)
 │   ├── bot.py              # Alternative entry point
 │   ├── models/
 │   │   └── database.py     # SQLAlchemy database models
@@ -50,15 +68,25 @@ Preferred communication style: Simple, everyday language.
 
 ## Features
 
-### 1. Automatic Thread Support (NEW!)
-- When anyone creates a thread in ANY channel, bot automatically:
+### 1. Channel-Based Auto-Response System (NEW!)
+
+| Channel Type | Bot Behavior |
+|--------------|--------------|
+| **Support Desk** | Replies to ALL messages automatically |
+| **Products Channel** | Creates ticket + welcomes user with Buy/Queries buttons |
+| **General Chat** | Only replies to purchase keywords (buy, price, cost, etc.) |
+| **Chat Zone / More Fun** | Bot completely ignores these |
+| **Threads** | Auto-creates ticket, welcomes user, answers questions |
+
+### 2. Automatic Thread Support
+- When anyone creates a thread in ANY channel (except ignored categories):
   - Creates a support ticket for that user
   - Sends welcome message: "Staff is coming to you shortly, until then I'm here to help!"
   - Shows Buy Product and Any Queries buttons
   - Answers questions automatically without commands
 - Users don't need to use any commands - just create a thread and chat!
 
-### 2. Ticket/Order System
+### 3. Ticket/Order System
 - `/newticket <subject>` - Create support ticket
 - `/closeticket` - Close current ticket
 - `/viewtickets` - View all active tickets (Staff)
@@ -67,57 +95,59 @@ Preferred communication style: Simple, everyday language.
 - `/myorders` - View your orders
 - `/completeorder <id>` - Mark order complete (Staff)
 
-### 3. Shopping Cart & Wishlist
+### 4. Shopping Cart & Wishlist
 - `/cart` - View cart
 - `/addtocart <product>` - Add to cart
 - `/clearcart` - Clear your cart
 - `/wishlist` - View wishlist
 - `/addtowishlist` - Add item to wishlist
 
-### 4. Smart Answer System
-- Bot auto-responds to questions in threads
+### 5. Smart Answer System
+- Bot auto-responds to questions in threads and support desk
 - Searches FAQs and products to answer questions
-- Keywords trigger helpful responses (price, payment, delivery, etc.)
+- Purchase keywords trigger helpful responses: buy, purchase, price, cost, order, how much, trigger, room, pose
 
-### 5. Welcome/Onboarding
+### 6. Welcome/Onboarding
 - Automatic welcome messages for new members
 - `/setwelcome #channel` - Set welcome channel
 - `/setwelcomemsg <message>` - Set welcome message
 
-### 6. Moderation
+### 7. Moderation
 - `/warn <user> <reason>` - Issue warning
 - `/warnings <user>` - View warnings
 - Kick/ban functionality available
 
-### 7. Announcements
+### 8. Announcements
 - `/announce <message>` - Send announcement
 - Broadcast and scheduled announcement features
 
-### 8. Feedback & Reviews
+### 9. Feedback & Reviews
 - `/feedback <message>` - Submit feedback
 - Review collection system
 
-### 9. Reminders
+### 10. Reminders
 - `/remind <time> <message>` - Set reminder
 - View pending reminders
 
-### 10. Multilingual Support
+### 11. Multilingual Support
 Supports: English, Spanish, French, German, Portuguese, Arabic, Chinese, Japanese, Korean, Russian
 - `/setlanguage <lang>` - Change language
 
-### 11. Analytics Dashboard
+### 12. Analytics Dashboard
 - `/stats` - Server statistics
 - Order analytics and top buyers
 
-### 12. Support System Configuration (Admin)
-- `/setsupportchannel #channel` - Set auto-response channel
+### 13. Support System Configuration (Admin)
+- `/setsupportchannel #channel` - Set support desk channel (bot replies to ALL)
+- `/setproductschannel #channel` - Set products channel (creates tickets)
+- `/setgeneralchat #channel` - Set general chat (only purchase messages)
 - `/setpaypal <link>` - Set PayPal payment link
 - `/setfounderrole @role` - Add Founder role (bot stops responding when they message)
 - `/setadminrole @role` - Add Admin role
 - `/resumebot` - Resume bot responses in ticket (after staff is done)
 - `/supportstatus` - View support system configuration
 
-### 13. Data Sync Commands (Admin)
+### 14. Data Sync Commands (Admin)
 - `/syncall` - Sync all products from all channels (only @sizuka42's messages)
 - `/syncchannel #channel` - Sync products from specific channel
 - `/fetchserver` - Auto-configure server channels and roles
@@ -126,7 +156,7 @@ Supports: English, Spanish, French, German, Portuguese, Arabic, Chinese, Japanes
 - `/addproduct` - Manually add a product
 - `/serverstats` - View detailed server and product statistics
 
-### 14. Interactive Purchase Flow
+### 15. Interactive Purchase Flow
 1. User creates thread or clicks "Buy Product" button
 2. User selects category (Triggers/Rooms/Poses/Other)
 3. User types product name → Bot shows product details, image, price
@@ -156,7 +186,7 @@ Supports: English, Spanish, French, German, Portuguese, Arabic, Chinese, Japanes
 - **reminders** - Scheduled reminders
 - **user_interactions** - Activity log
 - **analytics** - Daily metrics
-- **guild_settings** - Server configuration
+- **guild_settings** - Server configuration (includes products_channel_id, general_chat_id, ignored_category_ids)
 
 ## Configuration
 
@@ -186,3 +216,12 @@ Flask server runs on port 5000 for monitoring:
 - Personalized recommendations only in ticket channels
 - User data scoped per server
 - Secure token management
+
+## Quick Setup
+
+1. Run `/fetchserver` - Auto-detects your channels and roles
+2. Run `/syncall` - Syncs products from your messages
+3. Run `/setpaypal <link>` - Set your PayPal payment link
+4. Run `/supportstatus` - Verify configuration
+
+Bot is now ready to help customers automatically!
