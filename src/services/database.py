@@ -213,6 +213,27 @@ class DatabaseService:
             )
             return result.scalars().all()
     
+    async def get_user_tickets(self, user_id: int, guild_id: int) -> List[Ticket]:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(Ticket)
+                .options(selectinload(Ticket.user))
+                .where(and_(
+                    Ticket.user_id == user_id,
+                    Ticket.guild_id == guild_id
+                ))
+                .order_by(Ticket.created_at.desc())
+            )
+            return result.scalars().all()
+    
+    async def get_guild_tickets(self, guild_id: int, status: TicketStatus = None) -> List[Ticket]:
+        async with self.session_factory() as session:
+            query = select(Ticket).options(selectinload(Ticket.user)).where(Ticket.guild_id == guild_id)
+            if status:
+                query = query.where(Ticket.status == status)
+            result = await session.execute(query.order_by(Ticket.created_at.desc()))
+            return result.scalars().all()
+    
     async def update_ticket_status(self, ticket_id: str, status: TicketStatus, 
                                    assigned_staff_id: int = None) -> Ticket:
         async with self.session_factory() as session:

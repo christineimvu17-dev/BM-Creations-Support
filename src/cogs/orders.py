@@ -187,20 +187,55 @@ class OrdersCog(commands.Cog):
         lang = user.language
         
         embed = create_embed(
-            title=f"{get_status_emoji('pending')} {get_text('order_created', lang)}",
+            title=f"🎫 {get_text('order_created', lang)}",
             description=f"Your order has been created successfully!",
             color=Config.EMBED_COLOR
         )
         
-        embed.add_field(name="Order ID", value=order.order_id, inline=True)
-        embed.add_field(name="Customer", value=interaction.user.mention, inline=True)
-        embed.add_field(name="Status", value=f"{get_status_emoji('pending')} Pending", inline=True)
-        embed.add_field(name="Order Details", value=details, inline=False)
-        embed.add_field(name="Created At", value=format_timestamp(get_eastern_time()), inline=False)
+        embed.add_field(name="🆔 Order ID", value=f"**{order.order_id}**", inline=True)
+        embed.add_field(name="👤 Customer", value=interaction.user.mention, inline=True)
+        embed.add_field(name="📦 Status", value="🟡 **Pending**", inline=True)
+        embed.add_field(name="📋 Order Details", value=details, inline=False)
+        embed.add_field(name="🕐 Created At", value=format_timestamp(get_eastern_time()), inline=False)
         
         embed.set_footer(text=f"Track your order with: /trackorder {order.order_id}")
         
         await interaction.followup.send(embed=embed)
+        
+        all_orders = await db_service.get_user_orders(interaction.user.id, interaction.guild.id)
+        total_orders = len(all_orders) if all_orders else 0
+        total_spent = sum(o.total_amount for o in all_orders) if all_orders else 0
+        completed_orders = sum(1 for o in all_orders if o.status == OrderStatus.DELIVERED) if all_orders else 0
+        
+        try:
+            dm_embed = create_embed(
+                title="📊 𝐘𝐨𝐮𝐫 𝐎𝐫𝐝𝐞𝐫 𝐒𝐮𝐦𝐦𝐚𝐫𝐲",
+                description=f"Thank you for ordering from **BM Creations Market**!",
+                color=Config.EMBED_COLOR
+            )
+            
+            dm_embed.add_field(name="🆕 New Order", value=f"**{order.order_id}**\n{details}", inline=False)
+            dm_embed.add_field(name="📦 Total Orders", value=f"**{total_orders}**", inline=True)
+            dm_embed.add_field(name="✅ Completed", value=f"**{completed_orders}**", inline=True)
+            dm_embed.add_field(name="💰 Total Spent", value=f"**${total_spent:.2f}**", inline=True)
+            
+            if all_orders:
+                recent = "\n".join([
+                    f"• **{o.order_id}** - {o.status.value.title()}" 
+                    for o in all_orders[:5]
+                ])
+                dm_embed.add_field(name="📋 Recent Orders", value=recent, inline=False)
+            
+            dm_embed.add_field(
+                name="🌐 Connect With Us",
+                value="**Website:** [imvublackmarket.xyz](https://imvublackmarket.xyz/)\n**Instagram:** [@imvublackmarket_official](https://www.instagram.com/imvublackmarket_official)",
+                inline=False
+            )
+            dm_embed.set_footer(text="BM Creations Market | Track orders with /trackorder")
+            
+            await interaction.user.send(embed=dm_embed)
+        except:
+            pass
     
     @app_commands.command(name="trackorder", description="Track an order by ID")
     @app_commands.describe(order_id="The order ID to track")

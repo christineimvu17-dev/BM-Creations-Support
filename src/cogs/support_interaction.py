@@ -129,25 +129,25 @@ class ProductCategorySelect(ui.View):
             return False
         return True
     
-    @ui.button(label="Triggers", style=discord.ButtonStyle.primary, emoji="🎮", custom_id="cat_triggers")
-    async def triggers_button(self, interaction: discord.Interaction, button: ui.Button):
-        self.value = "triggers"
-        await self.ask_product_name(interaction, "Triggers")
+    @ui.button(label="Permanent Triggers", style=discord.ButtonStyle.success, emoji="🎯", custom_id="cat_permanent_triggers", row=0)
+    async def permanent_triggers_button(self, interaction: discord.Interaction, button: ui.Button):
+        self.value = "permanent_triggers"
+        await self.ask_product_name(interaction, "Permanent Triggers")
     
-    @ui.button(label="Rooms", style=discord.ButtonStyle.primary, emoji="🏠", custom_id="cat_rooms")
+    @ui.button(label="Gifting Triggers", style=discord.ButtonStyle.primary, emoji="🎁", custom_id="cat_gifting_triggers", row=0)
+    async def gifting_triggers_button(self, interaction: discord.Interaction, button: ui.Button):
+        self.value = "gifting_triggers"
+        await self.ask_product_name(interaction, "Gifting Triggers")
+    
+    @ui.button(label="Rooms", style=discord.ButtonStyle.primary, emoji="🏠", custom_id="cat_rooms", row=1)
     async def rooms_button(self, interaction: discord.Interaction, button: ui.Button):
         self.value = "rooms"
         await self.ask_product_name(interaction, "Rooms")
     
-    @ui.button(label="Poses", style=discord.ButtonStyle.primary, emoji="💃", custom_id="cat_poses")
+    @ui.button(label="Long Sex Poses", style=discord.ButtonStyle.danger, emoji="💋", custom_id="cat_poses", row=1)
     async def poses_button(self, interaction: discord.Interaction, button: ui.Button):
-        self.value = "poses"
-        await self.ask_product_name(interaction, "Poses")
-    
-    @ui.button(label="Other", style=discord.ButtonStyle.secondary, emoji="📦", custom_id="cat_other")
-    async def other_button(self, interaction: discord.Interaction, button: ui.Button):
-        self.value = "other"
-        await self.ask_product_name(interaction, "Other Products")
+        self.value = "long_sex_poses"
+        await self.ask_product_name(interaction, "Long Sex Poses")
     
     async def ask_product_name(self, interaction: discord.Interaction, category: str):
         for item in self.children:
@@ -164,12 +164,19 @@ class ProductCategorySelect(ui.View):
             extra["awaiting_product_name"] = True
             await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
         
+        examples = {
+            "Permanent Triggers": "Night Club, Beach House, Luxury Mansion",
+            "Gifting Triggers": "Gift Pack, Surprise Box, Special Edition",
+            "Rooms": "Bedroom, Lounge, Pool Party",
+            "Long Sex Poses": "Romantic Pack, Couples Edition, Premium Bundle"
+        }
+        
         embed = create_embed(
-            title=f"🛍️ {category}",
-            description=f"Please type the **name** of the {category.lower()} product you want to purchase.\n\nFor example: `Night Club`, `Beach House`, `Dance Pose Pack`",
+            title=f"🛒 {category}",
+            description=f"**Type the product name you want to purchase:**\n\n💡 **Examples:** `{examples.get(category, 'Product Name')}`",
             color=Config.EMBED_COLOR
         )
-        embed.set_footer(text="Type the product name below...")
+        embed.set_footer(text="BM Creations Market | Type product name below...")
         
         await interaction.response.send_message(embed=embed)
         self.stop()
@@ -282,6 +289,78 @@ class PaymentConfirmView(ui.View):
         
         await interaction.response.send_message(embed=embed)
 
+class PaymentButtonsView(ui.View):
+    def __init__(self, user_id: int, product_name: str, paypal_link: str, timeout: float = 600):
+        super().__init__(timeout=timeout)
+        self.user_id = user_id
+        self.product_name = product_name
+        self.paypal_link = paypal_link
+        
+        if paypal_link and paypal_link.startswith("http"):
+            self.add_item(ui.Button(
+                label="PayPal",
+                style=discord.ButtonStyle.link,
+                emoji="💳",
+                url=paypal_link
+            ))
+            self.add_item(ui.Button(
+                label="Credit Card",
+                style=discord.ButtonStyle.link,
+                emoji="💵",
+                url=paypal_link
+            ))
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This menu is not for you!", ephemeral=True)
+            return False
+        return True
+    
+    @ui.button(label="I've Made Payment", style=discord.ButtonStyle.success, emoji="✅", custom_id="payment_confirm", row=1)
+    async def payment_confirm(self, interaction: discord.Interaction, button: ui.Button):
+        for item in self.children:
+            if hasattr(item, 'disabled'):
+                item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except:
+            pass
+        
+        embed = create_embed(
+            title="✅ 𝐏𝐚𝐲𝐦𝐞𝐧𝐭 𝐂𝐨𝐧𝐟𝐢𝐫𝐦𝐚𝐭𝐢𝐨𝐧",
+            description=f"Thank you for purchasing **{self.product_name}**!\n\n"
+                       f"**📸 Please send the following:**\n"
+                       f"1️⃣ Screenshot of your PayPal payment\n"
+                       f"2️⃣ Your **IMVU Username** (for delivery)\n"
+                       f"3️⃣ Any customization requests\n\n"
+                       f"**Staff will process your order shortly!**",
+            color=Config.SUCCESS_COLOR
+        )
+        embed.set_footer(text="BM Creations Market | Upload your screenshot below")
+        
+        await interaction.response.send_message(embed=embed)
+        
+        ticket = await db_service.get_ticket(channel_id=interaction.channel.id)
+        if ticket:
+            extra = ticket.extra_data or {}
+            extra["awaiting_payment_proof"] = True
+            extra["product_purchased"] = self.product_name
+            await db_service.update_ticket_extra_data(ticket.ticket_id, extra)
+    
+    @ui.button(label="Need Help", style=discord.ButtonStyle.secondary, emoji="❓", custom_id="payment_need_help", row=1)
+    async def need_help(self, interaction: discord.Interaction, button: ui.Button):
+        embed = create_embed(
+            title="🆘 𝐏𝐚𝐲𝐦𝐞𝐧𝐭 𝐇𝐞𝐥𝐩",
+            description="**Having trouble with payment?**\n\n"
+                       "💡 **Tips:**\n"
+                       "• Make sure you're logged into PayPal\n"
+                       "• Try a different browser\n"
+                       "• Check your payment method\n\n"
+                       "**Staff will assist you shortly!**",
+            color=Config.WARNING_COLOR
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 class SupportInteractionCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -347,45 +426,61 @@ class SupportInteractionCog(commands.Cog):
         if faqs:
             return faqs[0].answer
         
+        products = await db_service.search_products(guild_id, message)
+        if products:
+            product = products[0]
+            price_text = f"${product.price:.2f}" if product.price else "Contact for price"
+            is_trigger = "trigger" in (product.category or "").lower()
+            
+            response = f"✨ **{product.name}**\n\n"
+            response += f"{product.description or 'Premium product from BM Creations!'}\n\n"
+            response += f"💰 **Price:** {price_text}\n"
+            response += f"🛡️ **Warranty:** Permanent\n"
+            response += f"👑 **VIP:** Onetime Platinum VIP\n"
+            if is_trigger:
+                response += f"🏠 **Note:** Private Room Needed\n"
+            response += f"\n**Click 'Buy Product' above to purchase!**"
+            return response
+        
         keywords = {
-            "price": "Our prices vary by product! What product are you interested in? I can check the price for you.",
-            "cost": "Our prices vary by product! What product are you interested in? I can check the price for you.",
-            "how much": "Our prices vary by product! Tell me which product you're looking at and I'll get the price for you.",
-            "payment": "We accept PayPal payments! Once you tell me which product you want, I'll provide the PayPal link.",
-            "paypal": "We accept PayPal payments! Just let me know which product you'd like to purchase.",
-            "pay": "We accept PayPal payments! Which product are you interested in?",
-            "delivery": "After payment confirmation, your product will be delivered to your IMVU account within 24 hours. Most orders are completed within a few hours!",
-            "how long": "Delivery is usually within a few hours, maximum 24 hours after payment confirmation!",
-            "when": "Your product will be delivered to your IMVU account after payment is confirmed. Usually within a few hours!",
-            "refund": "For refund requests, please provide your order details and a staff member will review your case.",
-            "cancel": "To cancel an order, please let us know immediately before delivery.",
-            "help": "I'm here to help! What would you like to know about our products or services?",
-            "hi": "Hello! Welcome to BM Creations! How can I help you today?",
-            "hello": "Hello! Welcome to BM Creations! What can I do for you?",
-            "hey": "Hey there! Welcome to BM Creations! How can I help?",
-            "thanks": "You're welcome! Is there anything else I can help you with?",
-            "thank you": "You're welcome! Let me know if you need anything else!",
-            "trigger": "We have great triggers! Which trigger are you interested in? Tell me the name and I'll get the details.",
-            "room": "We have amazing rooms! Which room are you looking for? I can check the price and details.",
-            "pose": "We have beautiful poses! Which pose pack interests you?",
-            "custom": "Yes, we offer custom work! Please describe what you'd like and staff will provide a quote.",
-            "buy": "Great! What would you like to buy? Tell me the product name and I'll help you with the purchase!",
-            "purchase": "Awesome! Which product would you like to purchase? I'll help you with the process!",
-            "want": "What product are you interested in? Tell me and I'll get you the details!",
-            "interested": "Great! Which product caught your eye? I can provide more information!",
+            "price": "💰 Our prices vary by product! Which product are you interested in? Tell me the name and I'll check the price for you.",
+            "cost": "💰 Our prices vary by product! Which product are you looking for? I can get the exact price.",
+            "how much": "💰 Prices depend on the product! Tell me which one you're looking at and I'll get the price.",
+            "payment": "💳 We accept **PayPal** and **Credit Card** payments! Which product would you like to purchase?",
+            "paypal": "💳 Yes, we accept PayPal! Just tell me which product you want and I'll provide the payment link.",
+            "pay": "💳 We accept PayPal payments! Which product are you interested in?",
+            "delivery": "📦 After payment confirmation, your product will be delivered within **24 hours**. Most orders are completed within a few hours!",
+            "how long": "⏰ Delivery is usually within a few hours, maximum **24 hours** after payment confirmation!",
+            "when": "⏰ Your product will be delivered after payment is confirmed. Usually within a few hours!",
+            "refund": "💵 For refund requests, please provide your order ID and a staff member will review your case.",
+            "cancel": "❌ To cancel an order, please let us know immediately before delivery with your order ID.",
+            "warranty": "🛡️ All our products come with **Permanent Warranty**! You're covered forever.",
+            "vip": "👑 All purchases include **Onetime Platinum VIP** access!",
+            "private room": "🏠 Triggers require a **Private Room** in IMVU. Make sure you have one before purchase!",
+            "help": "🤝 I'm here to help! What would you like to know about our products?",
+            "hi": "👋 Hello! Welcome to **BM Creations Market**! How can I help you today?",
+            "hello": "👋 Hello! Welcome to **BM Creations**! What can I do for you?",
+            "hey": "👋 Hey there! Welcome to **BM Creations**! How can I help?",
+            "thanks": "😊 You're welcome! Is there anything else I can help you with?",
+            "thank you": "😊 You're welcome! Let me know if you need anything else!",
+            "trigger": "🎯 We have amazing triggers! **Permanent Triggers** and **Gifting Triggers**. Which one interests you?",
+            "room": "🏠 We have beautiful rooms! Which room are you looking for? Tell me the name!",
+            "pose": "💋 We have great **Long Sex Poses**! Which pose pack interests you?",
+            "custom": "🎨 Yes, we offer custom work! Please describe what you'd like and staff will provide a quote.",
+            "buy": "🛒 Great! Tell me the **product name** and I'll help you with the purchase!",
+            "purchase": "🛒 Awesome! Which product would you like to purchase? I'll guide you through!",
+            "want": "🛍️ Which product are you interested in? Tell me the name and I'll get you the details!",
+            "interested": "✨ Great! Which product caught your eye? I can provide more information!",
+            "categories": "📋 We have:\n• **Permanent Triggers** 🎯\n• **Gifting Triggers** 🎁\n• **Rooms** 🏠\n• **Long Sex Poses** 💋\n\nWhich category interests you?",
+            "what do you sell": "🛍️ We sell:\n• **Permanent Triggers** 🎯\n• **Gifting Triggers** 🎁\n• **Rooms** 🏠\n• **Long Sex Poses** 💋\n\nAll with Permanent Warranty & Platinum VIP!",
+            "products": "🛍️ Our products include:\n• **Permanent Triggers** 🎯\n• **Gifting Triggers** 🎁\n• **Rooms** 🏠\n• **Long Sex Poses** 💋\n\nTell me what you're looking for!",
         }
         
         for keyword, response in keywords.items():
             if keyword in message_lower:
                 return response
         
-        products = await db_service.search_products(guild_id, message)
-        if products:
-            product = products[0]
-            price_text = f"${product.price:.2f}" if product.price else "Contact for price"
-            return f"I found **{product.name}**!\n\n{product.description or 'A great product from BM Creations!'}\n\n**Price:** {price_text}\n\nWould you like to purchase this? Just confirm and I'll guide you through the payment!"
-        
-        return None
+        return "🤔 I'm not sure about that, but a **staff member** will be with you shortly to help!\n\nIn the meantime, tell me which **product** you're interested in and I can provide details."
     
     async def create_ticket_for_user(self, channel, user: discord.Member, subject: str = "Product Inquiry"):
         try:
@@ -722,32 +817,39 @@ class SupportInteractionCog(commands.Cog):
     
     async def send_product_details(self, channel, product, user: discord.Member, settings):
         price_text = f"${product.price:.2f}" if product.price else "Contact for price"
+        paypal_link = settings.paypal_link or "https://paypal.me/"
+        
+        is_trigger = "trigger" in (product.category or "").lower()
         
         embed = create_embed(
-            title=f"🛍️ {product.name}",
-            description=product.description or "A premium product from BM Creations!",
+            title=f"✨ {product.name}",
+            description=product.description or "**Premium product from BM Creations Market!**",
             color=Config.EMBED_COLOR,
             thumbnail_url=product.image_url if product.image_url else None
         )
         
-        embed.add_field(name="💰 Price", value=price_text, inline=True)
-        embed.add_field(name="📁 Category", value=product.category or "General", inline=True)
+        embed.add_field(name="💰 𝐏𝐫𝐢𝐜𝐞", value=f"**{price_text}**", inline=True)
+        embed.add_field(name="📁 𝐂𝐚𝐭𝐞𝐠𝐨𝐫𝐲", value=product.category or "General", inline=True)
+        embed.add_field(name="🛡️ 𝐖𝐚𝐫𝐫𝐚𝐧𝐭𝐲", value="**Permanent**", inline=True)
+        embed.add_field(name="👑 𝐕𝐈𝐏", value="**Onetime Platinum VIP**", inline=True)
         
-        paypal_link = settings.paypal_link or "Contact staff for payment link"
+        if is_trigger:
+            embed.add_field(name="🏠 𝐍𝐨𝐭𝐞", value="⚠️ **Private Room Needed**", inline=True)
         
         embed.add_field(
-            name="💳 Payment Link",
-            value=f"[Click here to pay via PayPal]({paypal_link})" if paypal_link.startswith("http") else paypal_link,
+            name="━━━━━━━━━━━━━━━━━━━━━━",
+            value="**📋 𝐇𝐨𝐰 𝐭𝐨 𝐏𝐮𝐫𝐜𝐡𝐚𝐬𝐞:**\n"
+                  f"1️⃣ Click **PayPal** or **Credit Card** below\n"
+                  f"2️⃣ Send **{price_text}** as payment\n"
+                  f"3️⃣ Click **I've Made Payment** button\n"
+                  f"4️⃣ Upload payment screenshot\n"
+                  f"5️⃣ Provide your **IMVU Username**",
             inline=False
         )
         
-        embed.add_field(
-            name="📋 How to Purchase",
-            value=f"1. Click the PayPal link above\n2. Send **{price_text}** as payment\n3. Click 'I've Made Payment' button below\n4. Upload your payment screenshot\n5. Provide your IMVU username",
-            inline=False
-        )
+        embed.set_footer(text="BM Creations Market | Trusted Since 2020")
         
-        view = PaymentConfirmView(user.id, product.name)
+        view = PaymentButtonsView(user.id, product.name, paypal_link)
         await channel.send(embed=embed, view=view)
     
     async def send_ticket_welcome(self, channel, user: discord.Member):

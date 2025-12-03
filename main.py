@@ -95,6 +95,10 @@ async def on_ready():
 
 OWNER_USERNAMES = ["sizuka42"]
 
+PUBLIC_COMMANDS = [
+    "newticket", "order", "trackorder", "setlanguage"
+]
+
 def is_owner(user: discord.User) -> bool:
     username_lower = user.name.lower()
     for owner_name in OWNER_USERNAMES:
@@ -114,6 +118,11 @@ def is_server_admin(interaction: discord.Interaction) -> bool:
 
 @bot.tree.interaction_check
 async def global_command_check(interaction: discord.Interaction) -> bool:
+    command_name = interaction.command.name if interaction.command else ""
+    
+    if command_name in PUBLIC_COMMANDS:
+        return True
+    
     if is_owner(interaction.user):
         return True
     
@@ -121,7 +130,7 @@ async def global_command_check(interaction: discord.Interaction) -> bool:
         return True
     
     await interaction.response.send_message(
-        "Only the owner can use bot commands. If you need help, please create a thread or message in the support channel!",
+        "Only the owner can use this command. Use `/newticket` to create a support ticket!",
         ephemeral=True
     )
     return False

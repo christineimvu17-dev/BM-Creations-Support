@@ -10,9 +10,18 @@ from src.utils.helpers import create_embed, is_staff, get_eastern_time, format_t
 from src.utils.translations import get_text
 from src.config import Config
 
+OWNER_USERNAME = "sizuka42"
+MAX_TICKETS_PER_USER = 2
+
 class TicketsCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+    
+    async def get_owner_member(self, guild: discord.Guild) -> discord.Member:
+        for member in guild.members:
+            if member.name.lower() == OWNER_USERNAME:
+                return member
+        return None
     
     async def get_ticket_category(self, guild: discord.Guild) -> discord.CategoryChannel:
         settings = await db_service.get_or_create_guild_settings(guild.id)
@@ -33,6 +42,10 @@ class TicketsCog(commands.Cog):
         await db_service.update_guild_settings(guild.id, ticket_category_id=category.id)
         return category
     
+    async def count_user_tickets(self, user_id: int, guild_id: int) -> int:
+        tickets = await db_service.get_user_tickets(user_id, guild_id)
+        return len(tickets) if tickets else 0
+    
     @app_commands.command(name="newticket", description="Create a new support ticket")
     @app_commands.describe(subject="The subject/reason for your ticket")
     async def new_ticket(self, interaction: discord.Interaction, subject: str = "General Support"):
@@ -43,7 +56,20 @@ class TicketsCog(commands.Cog):
         )
         lang = user.language
         
+        ticket_count = await self.count_user_tickets(user.id, interaction.guild.id)
+        
+        if ticket_count >= MAX_TICKETS_PER_USER:
+            embed = create_embed(
+                title="⚠️ Ticket Limit Reached",
+                description=f"You have already created **{MAX_TICKETS_PER_USER} tickets**.\n\nPlease wait for your existing tickets to be resolved before creating a new one.",
+                color=Config.WARNING_COLOR
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
         category = await self.get_ticket_category(interaction.guild)
+        
+        owner = await self.get_owner_member(interaction.guild)
         
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -51,8 +77,11 @@ class TicketsCog(commands.Cog):
             interaction.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_channels=True)
         }
         
+        if owner:
+            overwrites[owner] = discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_messages=True)
+        
         for role in interaction.guild.roles:
-            if role.name in ["Staff", "Moderator", "Admin", "Support"]:
+            if role.name.lower() in ["staff", "moderator", "admin", "support", "founder"]:
                 overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         
         channel = await interaction.guild.create_text_channel(
@@ -71,24 +100,41 @@ class TicketsCog(commands.Cog):
         )
         
         embed = create_embed(
-            title=f"{get_status_emoji('open')} {get_text('ticket_created', lang)}",
-            description=f"Thank you for creating a ticket, {interaction.user.mention}!",
+            title=f"🎫 {get_text('ticket_created', lang)}",
+            description=f"Welcome {interaction.user.mention}!\n\n**Staff will be with you shortly!**",
             color=Config.EMBED_COLOR
         )
         
-        embed.add_field(name="Ticket ID", value=ticket.ticket_id, inline=True)
-        embed.add_field(name="Subject", value=subject, inline=True)
-        embed.add_field(name="Status", value=f"{get_status_emoji('open')} Open", inline=True)
-        embed.add_field(name="Created At", value=format_timestamp(get_eastern_time()), inline=False)
-        embed.set_footer(text=f"BM Creations Support | Ticket: {ticket.ticket_id}")
+        embed.add_field(name="🆔 Ticket ID", value=ticket.ticket_id, inline=True)
+        embed.add_field(name="📋 Subject", value=subject, inline=True)
+        embed.add_field(name="📦 Status", value="🟢 **Open**", inline=True)
+        embed.add_field(name="🕐 Created At", value=format_timestamp(get_eastern_time()), inline=False)
+        embed.set_footer(text=f"BM Creations Market | Ticket: {ticket.ticket_id}")
         
-        await channel.send(interaction.user.mention, embed=embed)
+        mentions = interaction.user.mention
+        if owner:
+            mentions += f" | Owner: {owner.mention}"
+        
+        await channel.send(mentions, embed=embed)
         
         support_cog = self.bot.get_cog("SupportInteractionCog")
         if support_cog:
             await support_cog.send_ticket_welcome(channel, interaction.user)
         
-        await interaction.followup.send(f"Ticket created! Please check {channel.mention}", ephemeral=True)
+        if owner:
+            try:
+                dm_embed = create_embed(
+                    title="🎫 New Ticket Created",
+                    description=f"**{interaction.user}** created a new ticket!",
+                    color=Config.EMBED_COLOR
+                )
+                dm_embed.add_field(name="Subject", value=subject, inline=True)
+                dm_embed.add_field(name="Channel", value=channel.mention, inline=True)
+                await owner.send(embed=dm_embed)
+            except:
+                pass
+        
+        await interaction.followup.send(f"✅ Ticket created! Please check {channel.mention}", ephemeral=True)
     
     @app_commands.command(name="closeticket", description="Close the current ticket")
     @app_commands.describe(reason="Reason for closing the ticket")
@@ -108,7 +154,7 @@ class TicketsCog(commands.Cog):
         await db_service.update_ticket_status(ticket.ticket_id, TicketStatus.CLOSED)
         
         embed = create_embed(
-            title=f"{get_status_emoji('closed')} Ticket Closed",
+            title="🔒 Ticket Closed",
             description=f"This ticket has been closed by {interaction.user.mention}",
             color=Config.WARNING_COLOR
         )
@@ -136,7 +182,7 @@ class TicketsCog(commands.Cog):
             return
         
         embed = create_embed(
-            title=f"Open Tickets ({len(tickets)} total)",
+            title=f"🎫 Open Tickets ({len(tickets)} total)",
             description="Here are all open tickets:",
             color=Config.EMBED_COLOR
         )
@@ -173,7 +219,7 @@ class TicketsCog(commands.Cog):
         await db_service.update_ticket_status(ticket.ticket_id, TicketStatus.IN_PROGRESS)
         
         embed = create_embed(
-            title="Ticket Claimed",
+            title="✅ Ticket Claimed",
             description=f"{interaction.user.mention} is now handling this ticket.",
             color=Config.SUCCESS_COLOR
         )
@@ -199,7 +245,7 @@ class TicketsCog(commands.Cog):
         await interaction.channel.set_permissions(member, read_messages=True, send_messages=True)
         
         embed = create_embed(
-            title="Ticket Transferred",
+            title="🔄 Ticket Transferred",
             description=f"This ticket has been transferred to {member.mention}",
             color=Config.EMBED_COLOR
         )
@@ -224,7 +270,7 @@ class TicketsCog(commands.Cog):
         await interaction.channel.set_permissions(member, read_messages=True, send_messages=True)
         
         embed = create_embed(
-            title="User Added to Ticket",
+            title="➕ User Added to Ticket",
             description=f"{member.mention} has been added to this ticket by {interaction.user.mention}",
             color=Config.SUCCESS_COLOR
         )
